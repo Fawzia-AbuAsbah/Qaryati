@@ -1,0 +1,259 @@
+erDiagram
+  %% Current V1 structure: 27 domain tables. Business workflow rules are in DATABASE_CONTRACT.md.
+  %% PK, FK on both association columns denotes one composite PK, not two independent PKs.
+  %% Composite UQ groups are documented in the contract; UK below marks single-column uniqueness.
+  %% villages(local_authority_id,governorate_id) references local_authorities(id,governorate_id).
+  %% A relation has exactly one target: related_village_id XOR related_place_name.
+  %% All domain tables belong to public; polymorphic entity targets have no normal FK.
+  governorates {
+    bigint id PK
+    varchar name_ar UK
+    varchar name_en
+    varchar code UK
+  }
+  local_authorities {
+    bigint id PK
+    bigint governorate_id FK
+    varchar name_ar
+    varchar name_en
+    varchar authority_type
+  }
+  villages {
+    bigint id PK
+    bigint governorate_id FK
+    bigint local_authority_id FK
+    varchar name_ar
+    varchar name_en
+    text name_origin
+    text location_description
+    numeric latitude
+    numeric longitude
+    numeric elevation_m
+    numeric area_km2
+    varchar status
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz archived_at
+  }
+  village_names {
+    bigint id PK
+    bigint village_id FK
+    varchar name
+    varchar language_code
+    varchar name_type
+    text notes
+  }
+  village_relations {
+    bigint id PK
+    bigint village_id FK
+    bigint related_village_id FK
+    varchar related_place_name
+    varchar relation_type
+    numeric distance_km
+  }
+  users {
+    bigint id PK
+    varchar username UK
+    varchar email
+    varchar password_hash
+    varchar display_name
+    boolean enabled
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz last_login_at
+  }
+  roles {
+    bigint id PK
+    varchar code UK
+    varchar description
+  }
+  user_roles {
+    bigint user_id PK, FK
+    bigint role_id PK, FK
+  }
+  sources {
+    bigint id PK
+    varchar title
+    varchar publisher
+    varchar author
+    varchar source_type
+    text url
+    date publication_date
+    date accessed_at
+    text citation
+    timestamptz created_at
+  }
+  population_records {
+    bigint id PK
+    bigint village_id FK
+    integer reference_year
+    date reference_date
+    integer population_count
+    varchar methodology
+    bigint source_id FK
+    text notes
+    varchar verification_status
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  village_histories {
+    bigint id PK
+    bigint village_id FK, UK
+    text overview
+    timestamptz updated_at
+    varchar verification_status
+  }
+  historical_events {
+    bigint id PK
+    bigint village_id FK
+    varchar title
+    text description
+    date event_date
+    integer year_from
+    integer year_to
+    varchar date_precision
+    varchar verification_status
+    timestamptz created_at
+  }
+  heritage_sites {
+    bigint id PK
+    bigint village_id FK
+    varchar name
+    varchar site_type
+    text description
+    numeric latitude
+    numeric longitude
+    text condition_notes
+    varchar verification_status
+  }
+  cultural_heritage {
+    bigint id PK
+    bigint village_id FK
+    varchar name
+    varchar heritage_type
+    text description
+    varchar verification_status
+  }
+  village_sources {
+    bigint village_id PK, FK
+    bigint source_id PK, FK
+    text claim_note
+  }
+  history_sources {
+    bigint village_history_id PK, FK
+    bigint source_id PK, FK
+  }
+  event_sources {
+    bigint event_id PK, FK
+    bigint source_id PK, FK
+  }
+  heritage_site_sources {
+    bigint heritage_site_id PK, FK
+    bigint source_id PK, FK
+  }
+  cultural_heritage_sources {
+    bigint cultural_heritage_id PK, FK
+    bigint source_id PK, FK
+  }
+  agricultural_products {
+    bigint id PK
+    varchar name_ar UK
+    varchar name_en
+    varchar product_type
+  }
+  village_agriculture {
+    bigint id PK
+    bigint village_id FK
+    bigint product_id FK
+    text description
+    varchar importance
+  }
+  economic_activities {
+    bigint id PK
+    bigint village_id FK
+    varchar name
+    varchar activity_type
+    text description
+  }
+  community_facilities {
+    bigint id PK
+    bigint village_id FK
+    varchar name
+    varchar facility_type
+    text description
+    numeric latitude
+    numeric longitude
+  }
+  audit_logs {
+    bigint id PK
+    bigint actor_user_id FK
+    varchar actor_label
+    varchar entity_type
+    bigint entity_id
+    varchar action
+    timestamptz occurred_at
+    jsonb before_data
+    jsonb after_data
+    varchar correlation_id
+    text reason
+  }
+  verification_records {
+    bigint id PK
+    varchar entity_type
+    bigint entity_id
+    bigint reviewer_user_id FK
+    varchar decision
+    text reason
+    timestamptz reviewed_at
+  }
+  data_conflicts {
+    bigint id PK
+    varchar entity_type
+    bigint entity_id
+    varchar field_name
+    jsonb conflicting_values
+    varchar status
+    text resolution_notes
+    bigint resolved_by FK
+    timestamptz created_at
+    timestamptz resolved_at
+  }
+  geocoding_cache {
+    bigint id PK
+    varchar provider
+    char query_hash
+    jsonb response_json
+    timestamptz cached_at
+    timestamptz expires_at
+  }
+  governorates ||--o{ local_authorities : "governorate_id"
+  governorates ||--o{ villages : "governorate_id"
+  local_authorities |o--o{ villages : "local_authority_id"
+  villages ||--o{ village_names : "village_id"
+  villages ||--o{ village_relations : "village_id"
+  villages |o--o{ village_relations : "related_village_id"
+  users ||--o{ user_roles : "user_id"
+  roles ||--o{ user_roles : "role_id"
+  villages ||--o{ population_records : "village_id"
+  sources ||--o{ population_records : "source_id"
+  villages ||--o| village_histories : "village_id"
+  villages ||--o{ historical_events : "village_id"
+  villages ||--o{ heritage_sites : "village_id"
+  villages ||--o{ cultural_heritage : "village_id"
+  villages ||--o{ village_sources : "village_id"
+  sources ||--o{ village_sources : "source_id"
+  village_histories ||--o{ history_sources : "village_history_id"
+  sources ||--o{ history_sources : "source_id"
+  historical_events ||--o{ event_sources : "event_id"
+  sources ||--o{ event_sources : "source_id"
+  heritage_sites ||--o{ heritage_site_sources : "heritage_site_id"
+  sources ||--o{ heritage_site_sources : "source_id"
+  cultural_heritage ||--o{ cultural_heritage_sources : "cultural_heritage_id"
+  sources ||--o{ cultural_heritage_sources : "source_id"
+  villages ||--o{ village_agriculture : "village_id"
+  agricultural_products ||--o{ village_agriculture : "product_id"
+  villages ||--o{ economic_activities : "village_id"
+  villages ||--o{ community_facilities : "village_id"
+  users |o--o{ audit_logs : "actor_user_id"
+  users ||--o{ verification_records : "reviewer_user_id"
+  users |o--o{ data_conflicts : "resolved_by"
