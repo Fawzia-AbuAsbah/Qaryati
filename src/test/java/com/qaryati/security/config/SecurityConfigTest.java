@@ -2,8 +2,13 @@
 package com.qaryati.security.config;
 import com.qaryati.security.entity.User;
 import com.qaryati.security.repository.UserRepository;
+import com.qaryati.security.service.JwtService;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -40,6 +45,9 @@ class SecurityConfigTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    JwtService jwtService;
+
     @Test
     void shouldRejectUnauthenticatedRequest() throws Exception {
 
@@ -53,21 +61,30 @@ class SecurityConfigTest {
     }
 
 
+
     @Test
-    void shouldAllowUserWithCorrectPassword() throws Exception {
+    void shouldAllowUserWithValidJwt() throws Exception {
+
         String username = "test_" + UUID.randomUUID()
                 .toString().substring(0, 8);
-
-        String password = "CorrectPassword123!";
 
         User user = new User(
                 username,
                 username + "@example.com",
-                passwordEncoder.encode(password),
+                passwordEncoder.encode("CorrectPassword123!"),
                 "Test User"
         );
 
         userRepository.saveAndFlush(user);
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(
+                        username,
+                        null,
+                        List.of()
+                );
+
+        String token = jwtService.generateToken(authentication);
 
         MockMvc mvc = MockMvcBuilders
                 .webAppContextSetup(context)
@@ -75,9 +92,10 @@ class SecurityConfigTest {
                 .build();
 
         mvc.perform(get("/api/v1/test/secure")
-                        .with(httpBasic(username, password)))
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }
+
 
     @Test
     void shouldRejectIncorrectPassword() throws Exception {
