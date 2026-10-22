@@ -11,6 +11,7 @@ import com.qaryati.security.repository.UserRepository;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
+@org.springframework.validation.annotation.Validated
 public class VerificationRecordService {
 
     private final VerificationRecordRepository verificationRepository;
@@ -42,9 +44,9 @@ public class VerificationRecordService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public VerificationRecordResponse createVerification(
-            CreateVerificationRequest request,
-            Authentication authentication
+            @jakarta.validation.constraints.NotNull @jakarta.validation.Valid CreateVerificationRequest request
     ) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null ||
                 !authentication.isAuthenticated()) {
             throw new IllegalArgumentException(
@@ -115,6 +117,7 @@ public class VerificationRecordService {
         String auditAction = switch (decision) {
             case "VERIFIED" -> "VERIFY";
             case "REJECTED" -> "REJECT";
+            case "NEEDS_REVISION" -> "UPDATE";
             default -> throw new IllegalArgumentException(
                     "Unsupported verification decision: " + decision
             );

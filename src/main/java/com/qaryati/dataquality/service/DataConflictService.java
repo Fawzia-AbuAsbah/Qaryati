@@ -13,6 +13,7 @@ import com.qaryati.security.repository.UserRepository;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
+@org.springframework.validation.annotation.Validated
 public class DataConflictService {
 
     private final DataConflictRepository conflictRepository;
@@ -44,7 +46,7 @@ public class DataConflictService {
     @Transactional
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
     public DataConflictResponse createConflict(
-            CreateDataConflictRequest request
+            @jakarta.validation.constraints.NotNull @jakarta.validation.Valid CreateDataConflictRequest request
     ) {
         String entityType = request.entityType().trim();
 
@@ -167,9 +169,9 @@ public class DataConflictService {
     @PreAuthorize("hasRole('ADMIN')")
     public DataConflictResponse resolveConflict(
             Long conflictId,
-            ResolveDataConflictRequest request,
-            Authentication authentication
+            @jakarta.validation.constraints.NotNull @jakarta.validation.Valid ResolveDataConflictRequest request
     ) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         DataConflict conflict = findConflict(conflictId);
 
         if (conflict.getStatus() != DataConflictStatus.IN_REVIEW) {
@@ -253,7 +255,7 @@ public class DataConflictService {
             );
         }
 
-        return conflictRepository.findById(conflictId)
+        return conflictRepository.findByIdForUpdate(conflictId)
                 .orElseThrow(() ->
                         new NoSuchElementException(
                                 "Data conflict not found: " + conflictId

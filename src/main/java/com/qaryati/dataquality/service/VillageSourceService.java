@@ -8,6 +8,7 @@ import com.qaryati.dataquality.repository.VillageExistsRepository;
 import com.qaryati.dataquality.repository.VillageSourceRepository;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
+@PreAuthorize("hasAnyRole('VIEWER', 'EDITOR', 'ADMIN')")
 public class VillageSourceService {
 
     private final VillageSourceRepository villageSourceRepository;
@@ -64,6 +66,7 @@ public class VillageSourceService {
     }
 
     @Transactional
+    @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
     public VillageSource linkSourceToVillage(
             Long villageId,
             Long sourceId,

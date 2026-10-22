@@ -15,6 +15,11 @@ import java.util.NoSuchElementException;
 @RestControllerAdvice(basePackages = "com.qaryati.dataquality")
 public class DataQualityExceptionHandler {
 
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Map<String, String>> handleConstraintViolation() {
+        return ResponseEntity.badRequest().body(Map.of("error", "Invalid request data"));
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(
             NoSuchElementException ex

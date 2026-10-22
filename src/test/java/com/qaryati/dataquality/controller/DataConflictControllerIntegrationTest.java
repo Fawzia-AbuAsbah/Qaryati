@@ -43,6 +43,66 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class DataConflictControllerIntegrationTest {
 
+    @Test
+    void rejectedTransitionsDoNotAddAuditEntries() throws Exception {
+        String token = tokenForRole("ADMIN");
+        Long id = createConflict(token, createTestVillage());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/review", id)
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/review", id)
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isConflict());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/resolve", id)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        assertEquals(2, auditLogRepository.findByEntityTypeAndEntityIdOrderByOccurredAtDesc("DATA_CONFLICT", id).size());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/resolve", id)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\"Reviewed\"}"))
+                .andExpect(status().isOk());
+        for (String operation : List.of("review", "resolve")) {
+            mockMvc.perform(patch("/api/v1/data-conflicts/{id}/" + operation, id)
+                            .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"resolutionNotes\":\"Again\"}"))
+                    .andExpect(status().isConflict());
+        }
+        var logs = auditLogRepository.findByEntityTypeAndEntityIdOrderByOccurredAtDesc("DATA_CONFLICT", id);
+        assertEquals(3, logs.size());
+        for (var log : logs) {
+            org.junit.jupiter.api.Assertions.assertFalse(log.getAfterData().containsKey("conflictingValues"));
+            org.junit.jupiter.api.Assertions.assertFalse(log.getAfterData().containsKey("resolutionNotes"));
+        }
+    }
+
+    @Test
+    void unsupportedEntityAndMissingResolutionTargetAreRejected() throws Exception {
+        String token = tokenForRole("ADMIN");
+        mockMvc.perform(post("/api/v1/data-conflicts").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createRequestBody(1L).replace("VILLAGE", "USER")))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/v1/data-conflicts/999999999/resolve")
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\"Reviewed\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void disabledReviewerCannotResolveConflict() throws Exception {
+        String token = tokenForRole("ADMIN");
+        Long id = createConflict(token, createTestVillage());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/review", id)
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        var user = userRepository.findById(lastCreatedUserId).orElseThrow();
+        user.setEnabled(false);
+        userRepository.saveAndFlush(user);
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/resolve", id)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\"Reviewed\"}"))
+                .andExpect(status().isUnauthorized());
+        assertEquals(DataConflictStatus.IN_REVIEW, conflictRepository.findById(id).orElseThrow().getStatus());
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -205,6 +265,7 @@ class DataConflictControllerIntegrationTest {
                 .andExpect(jsonPath("$.entityId").value(villageId))
                 .andExpect(jsonPath("$.fieldName").value("population"))
                 .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.conflictingValues.length()").value(2));
     }
 

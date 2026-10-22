@@ -35,6 +35,7 @@ public class AuditLog {
             nullable = false,
             insertable = false,
             updatable = false)
+    @org.hibernate.annotations.Generated(event = org.hibernate.generator.EventType.INSERT)
     private OffsetDateTime occurredAt;
 
     @JdbcTypeCode(SqlTypes.JSON)

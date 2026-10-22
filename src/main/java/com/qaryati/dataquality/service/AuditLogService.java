@@ -88,6 +88,10 @@ public class AuditLogService {
                         "Audit actor not found"
                 ));
 
+        if (!user.isEnabled()) {
+            throw new IllegalStateException("Audit actor account is disabled");
+        }
+
         AuditLog auditLog = new AuditLog(
                 user.getId(),
                 username,

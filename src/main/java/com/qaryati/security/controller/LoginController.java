@@ -3,14 +3,15 @@ package com.qaryati.security.controller;
 
 import com.qaryati.security.dto.LoginRequest;
 import com.qaryati.security.dto.LoginResponse;
-import com.qaryati.security.ratelimit.LoginRateLimitService;
 import com.qaryati.security.service.AuthenticationService;
 import com.qaryati.security.service.JwtService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -21,31 +22,21 @@ public class LoginController {
 
     private final AuthenticationService authenticationService;
     private final JwtService jwtService;
-    private final LoginRateLimitService loginRateLimitService;
     private final long expirationMinutes;
 
     public LoginController(
             AuthenticationService authenticationService,
             JwtService jwtService,
-            LoginRateLimitService loginRateLimitService,
             @Value("${app.jwt.expiration-minutes}") long expirationMinutes) {
 
         this.authenticationService = authenticationService;
         this.jwtService = jwtService;
-        this.loginRateLimitService = loginRateLimitService;
         this.expirationMinutes = expirationMinutes;
     }
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
-            @Valid @RequestBody LoginRequest request,
-            HttpServletRequest httpRequest) {
-
-        String clientIp = httpRequest.getRemoteAddr();
-
-        if (!loginRateLimitService.allowRequest(clientIp)) {
-            return ResponseEntity.status(429).build();
-        }
+            @Valid @RequestBody LoginRequest request) {
 
         Authentication authentication =
                 authenticationService.authenticate(request);
@@ -59,6 +50,16 @@ public class LoginController {
         );
 
         return ResponseEntity.ok(response);
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<Map<String, String>> invalidCredentials() {
+        return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+    }
+
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<Map<String, String>> invalidRequest() {
+        return ResponseEntity.badRequest().body(Map.of("error", "Invalid request data"));
     }
 
     @GetMapping("/me")

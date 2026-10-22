@@ -16,6 +16,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class LoginRateLimitIntegrationTest {
 
+    @Test
+    void malformedRequestsCountAndForwardingHeadersCannotBypassLimit() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .with(request -> { request.setRemoteAddr("192.0.2.111"); return request; })
+                            .header("X-Forwarded-For", "198.51.100." + i)
+                            .header("Forwarded", "for=198.51.100." + i)
+                            .contentType(MediaType.APPLICATION_JSON).content("{"))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .with(request -> { request.setRemoteAddr("192.0.2.111"); return request; })
+                        .header("X-Forwarded-For", "198.51.100.99")
+                        .contentType(MediaType.APPLICATION_JSON).content("{"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Retry-After", "60"));
+    }
+
     @Autowired
     private MockMvc mockMvc;
 

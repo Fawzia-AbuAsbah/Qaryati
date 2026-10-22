@@ -37,6 +37,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class VerificationRecordControllerIntegrationTest {
 
+    @Test
+    void needsRevisionIsPersistedAndAudited() throws Exception {
+        Long villageId = createTestVillage();
+        String token = tokenForRole("ADMIN");
+        mockMvc.perform(post("/api/v1/verifications")
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {"entityType":"VILLAGE", "entityId":%d,
+                             "decision":"NEEDS_REVISION", "reason":"Check references"}
+                            """.formatted(villageId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.decision").value("NEEDS_REVISION"))
+                .andExpect(jsonPath("$.reviewedAt").isNotEmpty());
+        var records = verificationRecordRepository.findByEntityTypeAndEntityIdOrderByReviewedAtDesc("VILLAGE", villageId);
+        assertEquals(1, records.size());
+        var logs = auditLogRepository.findByEntityTypeAndEntityIdOrderByOccurredAtDesc("VERIFICATION_RECORD", records.getFirst().getId());
+        assertEquals(1, logs.size());
+        assertEquals("UPDATE", logs.getFirst().getAction());
+        assertEquals("NEEDS_REVISION", logs.getFirst().getAfterData().get("decision"));
+        assertEquals(lastCreatedUserId, logs.getFirst().getActorUserId());
+    }
+
     @Autowired
     private MockMvc mockMvc;
     @Autowired

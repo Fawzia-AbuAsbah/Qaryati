@@ -33,6 +33,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class AuditLogControllerIntegrationTest {
 
+    @Test
+    void auditRecordsHaveNoMutationEndpoints() throws Exception {
+        String token = tokenForRole("ADMIN");
+        var log = createTestAuditLog(lastCreatedUserId);
+        for (var request : List.of(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/audit-logs/entity"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/audit-logs/entity"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/audit-logs/entity"))) {
+            mockMvc.perform(request.header("Authorization", "Bearer " + token))
+                    .andExpect(status().isMethodNotAllowed());
+        }
+        assertEquals("UPDATE", auditLogRepository.findById(log.getId()).orElseThrow().getAction());
+    }
+
     @Autowired
     private MockMvc mockMvc;
 

@@ -25,6 +25,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JwtServiceTest {
 
+    @Test
+    void shouldRejectMissingOrBlankSubjectAndMissingExpiration() {
+        Instant now = Instant.now();
+        for (String subject : new String[] {null, " ", "ahmad"}) {
+            var builder = JwtClaimsSet.builder().issuer("https://qaryati.example").issuedAt(now);
+            if (subject != null) builder.subject(subject);
+            if (!"ahmad".equals(subject)) builder.expiresAt(now.plusSeconds(900));
+            String token = jwtEncoder.encode(JwtEncoderParameters.from(
+                    JwsHeader.with(MacAlgorithm.HS256).build(), builder.build())).getTokenValue();
+            assertThrows(JwtValidationException.class, () -> jwtDecoder.decode(token));
+        }
+    }
+
     private JwtService jwtService;
     private JwtDecoder jwtDecoder;
     private JwtEncoder jwtEncoder;
