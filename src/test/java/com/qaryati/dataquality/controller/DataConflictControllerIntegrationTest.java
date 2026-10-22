@@ -523,4 +523,62 @@ class DataConflictControllerIntegrationTest {
         );
     }
 
+    @Test
+    void editorCannotReviewConflict() throws Exception {
+
+        Long villageId = createTestVillage();
+
+        String adminToken = tokenForRole("ADMIN");
+        Long conflictId = createConflict(adminToken, villageId);
+
+        String editorToken = tokenForRole("EDITOR");
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/review", conflictId)
+                                .header("Authorization", "Bearer " + editorToken)
+                )
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void editorCannotResolveConflict() throws Exception {
+
+        Long villageId = createTestVillage();
+
+        String adminToken = tokenForRole("ADMIN");
+        Long conflictId = createConflict(adminToken, villageId);
+
+        // Move conflict to IN_REVIEW using ADMIN
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/review", conflictId)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk());
+
+        // EDITOR must not be allowed to resolve the conflict
+        String editorToken = tokenForRole("EDITOR");
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/resolve", conflictId)
+                                .header("Authorization", "Bearer " + editorToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"resolutionNotes": "Attempt by editor"}
+                                    """)
+                )
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void viewerCannotFilterConflictsByStatus() throws Exception {
+
+        String viewerToken = tokenForRole("VIEWER");
+
+        mockMvc.perform(
+                        get("/api/v1/data-conflicts/status/OPEN")
+                                .header("Authorization", "Bearer " + viewerToken)
+                )
+                .andExpect(status().isForbidden());
+    }
+
 }
