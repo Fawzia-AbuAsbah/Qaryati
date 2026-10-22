@@ -21,6 +21,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import com.qaryati.dataquality.repository.VerificationRecordRepository;
 
+import com.qaryati.dataquality.repository.AuditLogRepository;
+
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.List;
@@ -48,6 +50,9 @@ class VerificationRecordControllerIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     private Long lastCreatedUserId;
 
@@ -370,6 +375,118 @@ class VerificationRecordControllerIntegrationTest {
                                 .content(requestBody)
                 )
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void verifiedDecisionAutomaticallyCreatesAuditLog() throws Exception {
+
+        Long villageId = createTestVillage();
+        String adminToken = tokenForRole("ADMIN");
+        Long actorId = lastCreatedUserId;
+
+        String requestBody = """
+            {
+                "entityType": "VILLAGE",
+                "entityId": %d,
+                "decision": "VERIFIED",
+                "reason": "Information checked"
+            }
+            """.formatted(villageId);
+
+        mockMvc.perform(
+                        post("/api/v1/verifications")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(requestBody)
+                )
+                .andExpect(status().isCreated());
+
+        var records = verificationRecordRepository
+                .findByEntityTypeAndEntityIdOrderByReviewedAtDesc(
+                        "VILLAGE",
+                        villageId
+                );
+
+        assertEquals(1, records.size());
+
+        Long verificationId = records.get(0).getId();
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "VERIFICATION_RECORD",
+                        verificationId
+                );
+
+        assertEquals(1, logs.size());
+
+        var log = logs.get(0);
+
+        assertEquals(actorId, log.getActorUserId());
+        assertEquals("VERIFICATION_RECORD", log.getEntityType());
+        assertEquals(verificationId, log.getEntityId());
+        assertEquals("VERIFY", log.getAction());
+        assertEquals("VERIFIED", log.getAfterData().get("decision"));
+
+        assertEquals(
+                villageId.longValue(),
+                ((Number) log.getAfterData().get("entityId")).longValue()
+        );
+    }
+
+    @Test
+    void rejectedDecisionAutomaticallyCreatesAuditLog() throws Exception {
+
+        Long villageId = createTestVillage();
+        String adminToken = tokenForRole("ADMIN");
+        Long actorId = lastCreatedUserId;
+
+        String requestBody = """
+            {
+                "entityType": "VILLAGE",
+                "entityId": %d,
+                "decision": "REJECTED",
+                "reason": "Information does not match the source"
+            }
+            """.formatted(villageId);
+
+        mockMvc.perform(
+                        post("/api/v1/verifications")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(requestBody)
+                )
+                .andExpect(status().isCreated());
+
+        var records = verificationRecordRepository
+                .findByEntityTypeAndEntityIdOrderByReviewedAtDesc(
+                        "VILLAGE",
+                        villageId
+                );
+
+        assertEquals(1, records.size());
+
+        Long verificationId = records.get(0).getId();
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "VERIFICATION_RECORD",
+                        verificationId
+                );
+
+        assertEquals(1, logs.size());
+
+        var log = logs.get(0);
+
+        assertEquals(actorId, log.getActorUserId());
+        assertEquals("VERIFICATION_RECORD", log.getEntityType());
+        assertEquals(verificationId, log.getEntityId());
+        assertEquals("REJECT", log.getAction());
+        assertEquals("REJECTED", log.getAfterData().get("decision"));
+
+        assertEquals(
+                villageId.longValue(),
+                ((Number) log.getAfterData().get("entityId")).longValue()
+        );
     }
 
 }

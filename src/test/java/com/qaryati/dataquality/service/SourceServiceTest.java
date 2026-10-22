@@ -1,28 +1,37 @@
 
 package com.qaryati.dataquality.service;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import com.qaryati.dataquality.entity.Source;
 import com.qaryati.dataquality.repository.SourceRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class SourceServiceTest {
 
     private SourceRepository sourceRepository;
+    private AuditLogService auditLogService;
     private SourceService sourceService;
 
     @BeforeEach
     void setUp() {
         sourceRepository = mock(SourceRepository.class);
-        sourceService = new SourceService(sourceRepository);
+        auditLogService = mock(AuditLogService.class);
+
+        sourceService = new SourceService(
+                sourceRepository,
+                auditLogService
+        );
     }
 
     @Test
@@ -33,17 +42,41 @@ class SourceServiceTest {
                 "CENSUS"
         );
 
-        when(sourceRepository.save(any(Source.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        when(sourceRepository.saveAndFlush(any(Source.class)))
+                .thenAnswer(invocation -> {
+                    Source saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 1L);
+                    return saved;
+                });
+
 
         Source result = sourceService.createSource(source);
 
-        assertEquals("Palestinian Population Census",
-                result.getTitle());
+        assertEquals(
+                "Palestinian Population Census",
+                result.getTitle()
+        );
 
         assertEquals("CENSUS", result.getSourceType());
 
-        verify(sourceRepository).save(source);
+        verify(sourceRepository).saveAndFlush(source);
+
+        verify(auditLogService).record(
+                eq("SOURCE"),
+                eq(1L),
+                eq("CREATE"),
+                isNull(),
+                argThat(data ->
+                        "Palestinian Population Census".equals(
+                                data.get("title")
+                        )
+                                && "CENSUS".equals(
+                                data.get("sourceType")
+                        )
+                ),
+                eq("Source created")
+        );
     }
 
     @Test
@@ -56,7 +89,7 @@ class SourceServiceTest {
                 () -> sourceService.createSource(source)
         );
 
-        verifyNoInteractions(sourceRepository);
+        verifyNoInteractions(sourceRepository, auditLogService);
     }
 
     @Test
@@ -69,7 +102,7 @@ class SourceServiceTest {
                 () -> sourceService.createSource(source)
         );
 
-        verifyNoInteractions(sourceRepository);
+        verifyNoInteractions(sourceRepository, auditLogService);
     }
 
     @Test
@@ -84,5 +117,6 @@ class SourceServiceTest {
         );
 
         verify(sourceRepository).findById(999L);
+        verifyNoInteractions(auditLogService);
     }
 }

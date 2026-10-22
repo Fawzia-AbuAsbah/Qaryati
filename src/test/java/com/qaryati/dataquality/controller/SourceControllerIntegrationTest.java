@@ -27,6 +27,11 @@ import java.util.UUID;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.qaryati.dataquality.repository.AuditLogRepository;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
@@ -34,6 +39,9 @@ class SourceControllerIntegrationTest {
 
     @Autowired
     private WebApplicationContext context;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -215,6 +223,67 @@ class SourceControllerIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error")
                         .value("Invalid request body or source type"));
+    }
+
+    @Test
+    void creatingSourceAutomaticallyCreatesAuditLog() throws Exception {
+
+        String token = tokenForRole("EDITOR");
+
+        mvc.perform(
+                        post("/api/v1/sources")
+                                .header("Authorization", "Bearer " + token)
+                                .contentType("application/json")
+                                .content("""
+                                    {
+                                        "title": "Audit Test Source",
+                                        "sourceType": "BOOK"
+                                    }
+                                    """)
+                )
+                .andExpect(status().isCreated());
+
+        var sources = sourceRepository
+                .findByTitleContainingIgnoreCase("Audit Test Source");
+
+        assertEquals(1, sources.size());
+
+        var source = sources.get(0);
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "SOURCE",
+                        source.getId()
+                );
+
+        assertEquals(1, logs.size());
+
+        var log = logs.get(0);
+
+        assertNotNull(log.getId());
+        assertNotNull(log.getActorUserId());
+
+        assertEquals("SOURCE", log.getEntityType());
+        assertEquals(source.getId(), log.getEntityId());
+        assertEquals("CREATE", log.getAction());
+
+        assertEquals(
+                "Audit Test Source",
+                log.getAfterData().get("title")
+        );
+
+        assertEquals(
+                "BOOK",
+                log.getAfterData().get("sourceType")
+        );
+
+        var actor = userRepository.findById(log.getActorUserId())
+                .orElseThrow();
+
+        assertEquals("EDITOR", actor.getRoles()
+                .iterator()
+                .next()
+                .getCode());
     }
 
 }

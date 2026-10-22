@@ -35,6 +35,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.qaryati.dataquality.repository.AuditLogRepository;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -45,6 +50,9 @@ class VillageSourceControllerIntegrationTest {
     private WebApplicationContext context;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private MockMvc mockMvc;
@@ -275,6 +283,86 @@ class VillageSourceControllerIntegrationTest {
                 "Village-Source link should exist in the database"
         );
 
+    }
+
+    @Test
+    void linkingSourceToVillageAutomaticallyCreatesAuditLog()
+            throws Exception {
+
+        Long[] ids = createTestVillageAndSource();
+
+        Long villageId = ids[0];
+        Long sourceId = ids[1];
+
+        String token = tokenForRole("EDITOR");
+
+        String requestBody = """
+            {
+                "sourceId": %d,
+                "claimNote": "Population data from census"
+            }
+            """.formatted(sourceId);
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/villages/{villageId}/sources",
+                                villageId
+                        )
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(
+                                        org.springframework.http.MediaType
+                                                .APPLICATION_JSON
+                                )
+                                .content(requestBody)
+                )
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.villageId").value(villageId))
+                .andExpect(jsonPath("$.sourceId").value(sourceId));
+
+        VillageSourceId linkId = new VillageSourceId(
+                villageId,
+                sourceId
+        );
+
+        assertTrue(villageSourceRepository.existsById(linkId));
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "VILLAGE_SOURCE",
+                        villageId
+                );
+
+        assertEquals(1, logs.size());
+
+        var log = logs.get(0);
+
+        assertNotNull(log.getId());
+        assertNotNull(log.getActorUserId());
+
+        assertEquals("VILLAGE_SOURCE", log.getEntityType());
+        assertEquals(villageId, log.getEntityId());
+        assertEquals("CREATE", log.getAction());
+
+        assertEquals(
+                villageId.longValue(),
+                ((Number) log.getAfterData()
+                        .get("villageId")).longValue()
+        );
+
+        assertEquals(
+                sourceId.longValue(),
+                ((Number) log.getAfterData()
+                        .get("sourceId")).longValue()
+        );
+
+        var actor = userRepository
+                .findById(log.getActorUserId())
+                .orElseThrow();
+
+        assertTrue(
+                actor.getRoles().stream()
+                        .anyMatch(role -> "EDITOR".equals(role.getCode()))
+        );
     }
 
 }
