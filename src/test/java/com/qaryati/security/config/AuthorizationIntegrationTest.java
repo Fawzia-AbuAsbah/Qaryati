@@ -219,6 +219,7 @@ class AuthorizationIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+
     @Test
     void disabledUserCannotAccessWithExistingToken() throws Exception {
 
@@ -244,33 +245,21 @@ class AuthorizationIntegrationTest {
 
         String token = jwtService.generateToken(auth);
 
-        // Before disabling: access should be allowed
+        // Before disabling: access is allowed
         mockMvc().perform(get("/api/v1/test/roles/viewer")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
 
-        // Disable the user
-
-// Disable the user
-        user.setEnabled(false);
-
-// Disable the user
+        // Disable the account
         user.setEnabled(false);
         userRepository.saveAndFlush(user);
 
-// Same token must now be rejected
-        mockMvc().perform(get("/api/v1/test/roles/viewer")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnauthorized());
-
-        userRepository.saveAndFlush(user);
-
-
-        // Same token must now be rejected
+        // The same token must now be rejected
         mockMvc().perform(get("/api/v1/test/roles/viewer")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized());
     }
+
 
     @Test
     void roleChangeShouldApplyToExistingToken() throws Exception {

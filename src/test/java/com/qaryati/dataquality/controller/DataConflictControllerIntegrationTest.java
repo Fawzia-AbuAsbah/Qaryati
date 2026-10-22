@@ -10,6 +10,8 @@ import com.qaryati.security.repository.RoleRepository;
 import com.qaryati.security.repository.UserRepository;
 import com.qaryati.security.service.JwtService;
 
+import com.qaryati.dataquality.repository.AuditLogRepository;
+
 import tools.jackson.databind.json.JsonMapper;
 
 import org.junit.jupiter.api.Test;
@@ -41,8 +43,71 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class DataConflictControllerIntegrationTest {
 
+    @Test
+    void rejectedTransitionsDoNotAddAuditEntries() throws Exception {
+        String token = tokenForRole("ADMIN");
+        Long id = createConflict(token, createTestVillage());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/review", id)
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/review", id)
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isConflict());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/resolve", id)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        assertEquals(2, auditLogRepository.findByEntityTypeAndEntityIdOrderByOccurredAtDesc("DATA_CONFLICT", id).size());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/resolve", id)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\"Reviewed\"}"))
+                .andExpect(status().isOk());
+        for (String operation : List.of("review", "resolve")) {
+            mockMvc.perform(patch("/api/v1/data-conflicts/{id}/" + operation, id)
+                            .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"resolutionNotes\":\"Again\"}"))
+                    .andExpect(status().isConflict());
+        }
+        var logs = auditLogRepository.findByEntityTypeAndEntityIdOrderByOccurredAtDesc("DATA_CONFLICT", id);
+        assertEquals(3, logs.size());
+        for (var log : logs) {
+            org.junit.jupiter.api.Assertions.assertFalse(log.getAfterData().containsKey("conflictingValues"));
+            org.junit.jupiter.api.Assertions.assertFalse(log.getAfterData().containsKey("resolutionNotes"));
+        }
+    }
+
+    @Test
+    void unsupportedEntityAndMissingResolutionTargetAreRejected() throws Exception {
+        String token = tokenForRole("ADMIN");
+        mockMvc.perform(post("/api/v1/data-conflicts").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createRequestBody(1L).replace("VILLAGE", "USER")))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/v1/data-conflicts/999999999/resolve")
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\"Reviewed\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void disabledReviewerCannotResolveConflict() throws Exception {
+        String token = tokenForRole("ADMIN");
+        Long id = createConflict(token, createTestVillage());
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/review", id)
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        var user = userRepository.findById(lastCreatedUserId).orElseThrow();
+        user.setEnabled(false);
+        userRepository.saveAndFlush(user);
+        mockMvc.perform(patch("/api/v1/data-conflicts/{id}/resolve", id)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNotes\":\"Reviewed\"}"))
+                .andExpect(status().isUnauthorized());
+        assertEquals(DataConflictStatus.IN_REVIEW, conflictRepository.findById(id).orElseThrow().getStatus());
+    }
+
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -200,6 +265,7 @@ class DataConflictControllerIntegrationTest {
                 .andExpect(jsonPath("$.entityId").value(villageId))
                 .andExpect(jsonPath("$.fieldName").value("population"))
                 .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.conflictingValues.length()").value(2));
     }
 
@@ -392,4 +458,188 @@ class DataConflictControllerIntegrationTest {
                 )
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void creatingConflictAutomaticallyCreatesAuditLog() throws Exception {
+
+        Long villageId = createTestVillage();
+
+        String adminToken = tokenForRole("ADMIN");
+        Long actorId = lastCreatedUserId;
+
+        Long conflictId = createConflict(adminToken, villageId);
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "DATA_CONFLICT",
+                        conflictId
+                );
+
+        assertEquals(1, logs.size());
+
+        var log = logs.get(0);
+
+        assertEquals(actorId, log.getActorUserId());
+        assertEquals("DATA_CONFLICT", log.getEntityType());
+        assertEquals(conflictId, log.getEntityId());
+        assertEquals("CREATE", log.getAction());
+
+        assertEquals("OPEN", log.getAfterData().get("status"));
+        assertEquals(villageId,
+                ((Number) log.getAfterData().get("entityId")).longValue());
+
+        assertNotNull(log.getId());
+    }
+
+    @Test
+    void movingConflictToReviewCreatesAuditLog() throws Exception {
+
+        Long villageId = createTestVillage();
+        String adminToken = tokenForRole("ADMIN");
+        Long actorId = lastCreatedUserId;
+
+        Long conflictId = createConflict(adminToken, villageId);
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/review", conflictId)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_REVIEW"));
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "DATA_CONFLICT",
+                        conflictId
+                );
+
+        assertEquals(2, logs.size());
+
+        var updateLog = logs.stream()
+                .filter(log -> "UPDATE".equals(log.getAction()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(actorId, updateLog.getActorUserId());
+        assertEquals("OPEN", updateLog.getBeforeData().get("status"));
+        assertEquals("IN_REVIEW", updateLog.getAfterData().get("status"));
+    }
+
+    @Test
+    void resolvingConflictCreatesAuditLog() throws Exception {
+
+        Long villageId = createTestVillage();
+        String adminToken = tokenForRole("ADMIN");
+        Long actorId = lastCreatedUserId;
+
+        Long conflictId = createConflict(adminToken, villageId);
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/review", conflictId)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk());
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/resolve", conflictId)
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {
+                                      "resolutionNotes": "Verified using official source"
+                                    }
+                                    """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RESOLVED"));
+
+        var logs = auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
+                        "DATA_CONFLICT",
+                        conflictId
+                );
+
+        assertEquals(3, logs.size());
+
+        var resolvedLog = logs.stream()
+                .filter(log -> "UPDATE".equals(log.getAction()))
+                .filter(log -> "RESOLVED".equals(
+                        log.getAfterData().get("status")
+                ))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(actorId, resolvedLog.getActorUserId());
+        assertEquals("IN_REVIEW",
+                resolvedLog.getBeforeData().get("status"));
+        assertEquals("RESOLVED",
+                resolvedLog.getAfterData().get("status"));
+
+        assertEquals(actorId,
+                ((Number) resolvedLog.getAfterData()
+                        .get("resolvedBy")).longValue());
+
+        assertNotNull(
+                resolvedLog.getAfterData().get("resolvedAt")
+        );
+    }
+
+    @Test
+    void editorCannotReviewConflict() throws Exception {
+
+        Long villageId = createTestVillage();
+
+        String adminToken = tokenForRole("ADMIN");
+        Long conflictId = createConflict(adminToken, villageId);
+
+        String editorToken = tokenForRole("EDITOR");
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/review", conflictId)
+                                .header("Authorization", "Bearer " + editorToken)
+                )
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void editorCannotResolveConflict() throws Exception {
+
+        Long villageId = createTestVillage();
+
+        String adminToken = tokenForRole("ADMIN");
+        Long conflictId = createConflict(adminToken, villageId);
+
+        // Move conflict to IN_REVIEW using ADMIN
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/review", conflictId)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk());
+
+        // EDITOR must not be allowed to resolve the conflict
+        String editorToken = tokenForRole("EDITOR");
+
+        mockMvc.perform(
+                        patch("/api/v1/data-conflicts/{id}/resolve", conflictId)
+                                .header("Authorization", "Bearer " + editorToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"resolutionNotes": "Attempt by editor"}
+                                    """)
+                )
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void viewerCannotFilterConflictsByStatus() throws Exception {
+
+        String viewerToken = tokenForRole("VIEWER");
+
+        mockMvc.perform(
+                        get("/api/v1/data-conflicts/status/OPEN")
+                                .header("Authorization", "Bearer " + viewerToken)
+                )
+                .andExpect(status().isForbidden());
+    }
+
 }

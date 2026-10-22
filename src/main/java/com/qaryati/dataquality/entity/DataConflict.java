@@ -43,6 +43,7 @@ public class DataConflict {
     private Long resolvedBy;
 
     @Column(name = "created_at", insertable = false, updatable = false)
+    @org.hibernate.annotations.Generated(event = org.hibernate.generator.EventType.INSERT)
     private OffsetDateTime createdAt;
 
     @Column(name = "resolved_at")

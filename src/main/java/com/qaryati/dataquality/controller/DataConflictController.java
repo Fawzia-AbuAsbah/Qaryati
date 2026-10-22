@@ -12,7 +12,6 @@ import jakarta.validation.constraints.Positive;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -72,11 +71,10 @@ public class DataConflictController {
     @PatchMapping("/{id}/resolve")
     public ResponseEntity<DataConflictResponse> resolveConflict(
             @PathVariable @Positive Long id,
-            @Valid @RequestBody ResolveDataConflictRequest request,
-            Authentication authentication
+            @Valid @RequestBody ResolveDataConflictRequest request
     ) {
         return ResponseEntity.ok(
-                conflictService.resolveConflict(id, request, authentication)
+                conflictService.resolveConflict(id, request)
         );
     }
 }

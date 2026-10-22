@@ -8,6 +8,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.util.Base64;
@@ -44,9 +47,12 @@ public class JwtConfig {
                 .build();
 
         decoder.setJwtValidator(
-                JwtValidators.createDefaultWithIssuer(
+                new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(
                         "https://qaryati.example"
-                )
+                ), jwt -> jwt.getSubject() != null && !jwt.getSubject().isBlank()
+                        && jwt.getExpiresAt() != null
+                        ? OAuth2TokenValidatorResult.success()
+                        : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token")))
         );
 
         return decoder;
