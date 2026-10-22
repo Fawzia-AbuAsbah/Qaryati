@@ -58,10 +58,9 @@ public class DataQualityExceptionHandler {
     ) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
-                .body(Map.of(
-                        "error",
-                        "Source is already linked to this village"
-                ));
+
+                .body(Map.of("error", ex.getMessage()));
+
     }
 
 }
