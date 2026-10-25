@@ -29,7 +29,7 @@ import org.springframework.web.context.WebApplicationContext;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
-
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 @SpringBootTest
 @ActiveProfiles("test")
 
@@ -154,4 +154,42 @@ class SecurityConfigTest {
             return ResponseEntity.ok("Protected content");
         }
     }
+
+    @Test
+    void shouldRejectJwtAfterUserIsDisabled() throws Exception {
+
+        String username = "test_" +
+                UUID.randomUUID().toString().substring(0, 8);
+
+        User user = new User(
+                username,
+                username + "@example.com",
+                passwordEncoder.encode("CorrectPassword123!"),
+                "Test User"
+        );
+
+        userRepository.saveAndFlush(user);
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(
+                        username,
+                        null,
+                        List.of()
+                );
+
+        String token = jwtService.generateToken(authentication);
+
+        user.setEnabled(false);
+        userRepository.saveAndFlush(user);
+
+        MockMvc mvc = MockMvcBuilders
+                .webAppContextSetup(context)
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
+
+        mvc.perform(get("/api/v1/test/secure")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
 }

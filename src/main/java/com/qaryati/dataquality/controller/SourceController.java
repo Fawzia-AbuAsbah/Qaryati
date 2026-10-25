@@ -61,6 +61,14 @@ public class SourceController {
         return ResponseEntity.ok(sources);
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
+    public SourceResponse updateSource(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateSourceRequest request) {
+        return SourceResponse.fromEntity(sourceService.updateSource(id, request));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('VIEWER', 'EDITOR', 'ADMIN')")
     public ResponseEntity<SourceResponse> getSourceById(

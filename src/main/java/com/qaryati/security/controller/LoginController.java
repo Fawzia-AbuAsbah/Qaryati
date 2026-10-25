@@ -9,6 +9,9 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -49,6 +52,16 @@ public class LoginController {
         return ResponseEntity.ok(response);
     }
 
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<Map<String, String>> invalidCredentials() {
+        return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+    }
+
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<Map<String, String>> invalidRequest() {
+        return ResponseEntity.badRequest().body(Map.of("error", "Invalid request data"));
+    }
+
     @GetMapping("/me")
     public ResponseEntity<Map<String, String>> me(
             Authentication authentication) {
@@ -57,5 +70,4 @@ public class LoginController {
                 Map.of("username", authentication.getName())
         );
     }
-
 }

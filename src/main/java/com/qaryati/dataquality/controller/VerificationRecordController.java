@@ -9,7 +9,6 @@ import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,12 +29,10 @@ public class VerificationRecordController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMIN')")
     public VerificationRecordResponse createVerification(
-            @Valid @RequestBody CreateVerificationRequest request,
-            Authentication authentication
+            @Valid @RequestBody CreateVerificationRequest request
     ) {
         return verificationService.createVerification(
-                request,
-                authentication
+                request
         );
     }
 

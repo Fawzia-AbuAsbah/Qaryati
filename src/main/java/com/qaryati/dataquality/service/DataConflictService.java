@@ -13,33 +13,40 @@ import com.qaryati.security.repository.UserRepository;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
+@org.springframework.validation.annotation.Validated
 public class DataConflictService {
 
     private final DataConflictRepository conflictRepository;
     private final VillageExistsRepository villageExistsRepository;
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     public DataConflictService(
             DataConflictRepository conflictRepository,
             VillageExistsRepository villageExistsRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            AuditLogService auditLogService
     ) {
         this.conflictRepository = conflictRepository;
         this.villageExistsRepository = villageExistsRepository;
         this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
     public DataConflictResponse createConflict(
-            CreateDataConflictRequest request
+            @jakarta.validation.constraints.NotNull @jakarta.validation.Valid CreateDataConflictRequest request
     ) {
         String entityType = request.entityType().trim();
 
@@ -69,6 +76,15 @@ public class DataConflictService {
         );
 
         DataConflict saved = conflictRepository.saveAndFlush(conflict);
+
+        auditLogService.record(
+                "DATA_CONFLICT",
+                saved.getId(),
+                "CREATE",
+                null,
+                auditData(saved),
+                "Data conflict created"
+        );
 
         return DataConflictResponse.fromEntity(saved);
     }
@@ -131,20 +147,31 @@ public class DataConflictService {
             );
         }
 
+        Map<String, Object> beforeData = auditData(conflict);
+
         conflict.markInReview();
 
-        return DataConflictResponse.fromEntity(
-                conflictRepository.saveAndFlush(conflict)
+        DataConflict saved = conflictRepository.saveAndFlush(conflict);
+
+        auditLogService.record(
+                "DATA_CONFLICT",
+                saved.getId(),
+                "UPDATE",
+                beforeData,
+                auditData(saved),
+                "Conflict moved to review"
         );
+
+        return DataConflictResponse.fromEntity(saved);
     }
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public DataConflictResponse resolveConflict(
             Long conflictId,
-            ResolveDataConflictRequest request,
-            Authentication authentication
+            @jakarta.validation.constraints.NotNull @jakarta.validation.Valid ResolveDataConflictRequest request
     ) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         DataConflict conflict = findConflict(conflictId);
 
         if (conflict.getStatus() != DataConflictStatus.IN_REVIEW) {
@@ -182,14 +209,42 @@ public class DataConflictService {
             );
         }
 
+        Map<String, Object> beforeData = auditData(conflict);
+
         conflict.resolve(
                 reviewer.getId(),
                 request.resolutionNotes().trim()
         );
 
-        return DataConflictResponse.fromEntity(
-                conflictRepository.saveAndFlush(conflict)
+        DataConflict saved = conflictRepository.saveAndFlush(conflict);
+
+        auditLogService.record(
+                "DATA_CONFLICT",
+                saved.getId(),
+                "UPDATE",
+                beforeData,
+                auditData(saved),
+                "Conflict resolved"
         );
+
+        return DataConflictResponse.fromEntity(saved);
+    }
+
+    private Map<String, Object> auditData(DataConflict conflict) {
+        Map<String, Object> data = new LinkedHashMap<>();
+
+        data.put("entityType", conflict.getEntityType());
+        data.put("entityId", conflict.getEntityId());
+        data.put("fieldName", conflict.getFieldName());
+        data.put("status", conflict.getStatus().name());
+        data.put("resolvedBy", conflict.getResolvedBy());
+        data.put("resolvedAt", conflict.getResolvedAt() == null
+                ? null
+                : conflict.getResolvedAt().toString());
+
+        // Only store non-sensitive metadata in the audit snapshot.
+        // Conflicting values and resolution notes are not copied here.
+        return data;
     }
 
     private DataConflict findConflict(Long conflictId) {
@@ -200,7 +255,7 @@ public class DataConflictService {
             );
         }
 
-        return conflictRepository.findById(conflictId)
+        return conflictRepository.findByIdForUpdate(conflictId)
                 .orElseThrow(() ->
                         new NoSuchElementException(
                                 "Data conflict not found: " + conflictId

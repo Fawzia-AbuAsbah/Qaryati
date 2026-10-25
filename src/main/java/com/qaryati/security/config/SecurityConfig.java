@@ -11,6 +11,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import com.qaryati.security.ratelimit.LoginRateLimitFilter;
+import com.qaryati.security.ratelimit.LoginRateLimitService;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -19,10 +22,12 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationConverter jwtAuthenticationConverter)
+            JwtAuthenticationConverter jwtAuthenticationConverter,
+            LoginRateLimitService loginRateLimitService)
             throws Exception {
 
         http
+                .addFilterBefore(new LoginRateLimitFilter(loginRateLimitService), BearerTokenAuthenticationFilter.class)
                 // For stateless REST APIs using Bearer JWT,
                 // without cookie-based authentication
                 .csrf(csrf -> csrf.disable())

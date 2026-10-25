@@ -31,6 +31,7 @@ public class VerificationRecord {
 
     @Column(name = "reviewed_at", nullable = false,
             insertable = false, updatable = false)
+    @org.hibernate.annotations.Generated(event = org.hibernate.generator.EventType.INSERT)
     private OffsetDateTime reviewedAt;
 
     public VerificationRecord() {
