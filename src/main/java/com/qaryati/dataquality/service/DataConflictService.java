@@ -8,8 +8,8 @@ import com.qaryati.dataquality.entity.DataConflict;
 import com.qaryati.dataquality.enums.DataConflictStatus;
 import com.qaryati.dataquality.repository.DataConflictRepository;
 import com.qaryati.dataquality.repository.VillageExistsRepository;
-import com.qaryati.security.entity.User;
-import com.qaryati.security.repository.UserRepository;
+import com.qaryati.security.api.UserSummary;
+import com.qaryati.security.api.UserLookup;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -28,18 +28,18 @@ public class DataConflictService {
 
     private final DataConflictRepository conflictRepository;
     private final VillageExistsRepository villageExistsRepository;
-    private final UserRepository userRepository;
+    private final UserLookup userLookup;
     private final AuditLogService auditLogService;
 
     public DataConflictService(
             DataConflictRepository conflictRepository,
             VillageExistsRepository villageExistsRepository,
-            UserRepository userRepository,
+            UserLookup userLookup,
             AuditLogService auditLogService
     ) {
         this.conflictRepository = conflictRepository;
         this.villageExistsRepository = villageExistsRepository;
-        this.userRepository = userRepository;
+        this.userLookup = userLookup;
         this.auditLogService = auditLogService;
     }
 
@@ -195,7 +195,7 @@ public class DataConflictService {
             );
         }
 
-        User reviewer = userRepository
+        UserSummary reviewer = userLookup
                 .findByUsername(authentication.getName())
                 .orElseThrow(() ->
                         new IllegalArgumentException(
@@ -203,7 +203,7 @@ public class DataConflictService {
                         )
                 );
 
-        if (!reviewer.isEnabled()) {
+        if (!reviewer.enabled()) {
             throw new IllegalStateException(
                     "Reviewer account is disabled"
             );
@@ -212,7 +212,7 @@ public class DataConflictService {
         Map<String, Object> beforeData = auditData(conflict);
 
         conflict.resolve(
-                reviewer.getId(),
+                reviewer.id(),
                 request.resolutionNotes().trim()
         );
 

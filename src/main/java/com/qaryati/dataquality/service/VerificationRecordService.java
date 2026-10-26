@@ -6,8 +6,8 @@ import com.qaryati.dataquality.dto.VerificationRecordResponse;
 import com.qaryati.dataquality.entity.VerificationRecord;
 import com.qaryati.dataquality.repository.VerificationRecordRepository;
 import com.qaryati.dataquality.repository.VillageExistsRepository;
-import com.qaryati.security.entity.User;
-import com.qaryati.security.repository.UserRepository;
+import com.qaryati.security.api.UserSummary;
+import com.qaryati.security.api.UserLookup;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -25,18 +25,18 @@ import java.util.NoSuchElementException;
 public class VerificationRecordService {
 
     private final VerificationRecordRepository verificationRepository;
-    private final UserRepository userRepository;
+    private final UserLookup userLookup;
     private final VillageExistsRepository villageExistsRepository;
     private final AuditLogService auditLogService;
 
     public VerificationRecordService(
             VerificationRecordRepository verificationRepository,
-            UserRepository userRepository,
+            UserLookup userLookup,
             VillageExistsRepository villageExistsRepository,
             AuditLogService auditLogService
     ) {
         this.verificationRepository = verificationRepository;
-        this.userRepository = userRepository;
+        this.userLookup = userLookup;
         this.villageExistsRepository = villageExistsRepository;
         this.auditLogService = auditLogService;
     }
@@ -56,14 +56,14 @@ public class VerificationRecordService {
 
         String username = authentication.getName();
 
-        User reviewer = userRepository.findByUsername(username)
+        UserSummary reviewer = userLookup.findByUsername(username)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Reviewer user not found"
                         )
                 );
 
-        if (!reviewer.isEnabled()) {
+        if (!reviewer.enabled()) {
             throw new IllegalStateException(
                     "Reviewer account is disabled"
             );
@@ -104,7 +104,7 @@ public class VerificationRecordService {
         VerificationRecord record = new VerificationRecord(
                 entityType,
                 request.entityId(),
-                reviewer.getId(),
+                reviewer.id(),
                 request.decision(),
                 request.reason()
         );
@@ -126,7 +126,7 @@ public class VerificationRecordService {
         Map<String, Object> afterData = new LinkedHashMap<>();
         afterData.put("entityType", entityType);
         afterData.put("entityId", request.entityId());
-        afterData.put("reviewerId", reviewer.getId());
+        afterData.put("reviewerId", reviewer.id());
         afterData.put("decision", decision);
 
         auditLogService.record(

@@ -3,7 +3,7 @@ package com.qaryati.dataquality.service;
 
 import com.qaryati.dataquality.entity.AuditLog;
 import com.qaryati.dataquality.repository.AuditLogRepository;
-import com.qaryati.security.repository.UserRepository;
+import com.qaryati.security.api.UserLookup;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -30,14 +30,14 @@ public class AuditLogService {
     );
 
     private final AuditLogRepository auditLogRepository;
-    private final UserRepository userRepository;
+    private final UserLookup userLookup;
 
     public AuditLogService(
             AuditLogRepository auditLogRepository,
-            UserRepository userRepository
+            UserLookup userLookup
     ) {
         this.auditLogRepository = auditLogRepository;
-        this.userRepository = userRepository;
+        this.userLookup = userLookup;
     }
 
     @Transactional
@@ -83,17 +83,17 @@ public class AuditLogService {
 
         String username = authentication.getName();
 
-        var user = userRepository.findByUsername(username)
+        var user = userLookup.findByUsername(username)
                 .orElseThrow(() -> new IllegalStateException(
                         "Audit actor not found"
                 ));
 
-        if (!user.isEnabled()) {
+        if (!user.enabled()) {
             throw new IllegalStateException("Audit actor account is disabled");
         }
 
         AuditLog auditLog = new AuditLog(
-                user.getId(),
+                user.id(),
                 username,
                 entityType,
                 entityId,
