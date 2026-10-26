@@ -1,6 +1,8 @@
 
 package com.qaryati.dataquality.exception;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -13,6 +15,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 @RestControllerAdvice(basePackages = "com.qaryati.dataquality")
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class DataQualityExceptionHandler {
 
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
