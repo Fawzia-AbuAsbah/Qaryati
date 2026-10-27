@@ -1,0 +1,22 @@
+# Allow only files needed to package the application.
+**
+!Dockerfile
+!pom.xml
+!mvnw
+!.mvn/
+!.mvn/wrapper/
+!.mvn/wrapper/maven-wrapper.properties
+!src/
+!src/main/
+!src/main/**
+
+# Defense in depth for local files anywhere under the allowed source tree.
+**/.env
+**/.env.*
+**/secrets/
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.jks
+**/target/
