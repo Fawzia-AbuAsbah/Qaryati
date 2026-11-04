@@ -6,7 +6,7 @@ Member 1's Village module owns identity, geographic fields and administrative as
 V1 uses the existing public.villages schema without migration changes. Controllers delegate
 to transactional services; entities/repositories stay internal. VillagePageResponse is a
 local immutable HTTP wrapper so Spring Data PageImpl internals cannot change the page JSON.
-Service and repository pagination remain unchanged.
+Feature 4 extends listing through service-built Specifications while preserving the page HTTP contract.
 
 ## HTTP API
 
@@ -21,11 +21,47 @@ Roles use Spring Security ROLE_ authorities.
 | PUT | /{id} | 200, VillageResponse | EDITOR, ADMIN |
 | DELETE | /{id} | 204, empty; archive only | ADMIN |
 
-Collection parameters: page defaults to 0, size to 20. Page is zero-based; size is 1–100.
-Negative page, invalid size and offset above Integer.MAX_VALUE return 400. Values are
-never clamped. Fixed ascending ID order comes from the repository, not client sorting.
-No search/filter/sort parameters are implemented. Unknown query parameters are not a
-supported filtering or sorting contract. Offset pages are not a snapshot across requests.
+Collection query parameters (all optional):
+
+| Parameter | Default | Rules |
+| --- | --- | --- |
+| search | absent | Strip surrounding whitespace; blank means no filter; maximum 180 Java string characters after stripping |
+| governorateId | absent | Positive Long; blank binds as absent |
+| localAuthorityId | absent | Positive Long; blank binds as absent |
+| status | absent | Exact DRAFT, UNDER_REVIEW, VERIFIED, REJECTED; blank means absent |
+| sortBy | id | Exact allowlist: id, nameAr, nameEn, createdAt, updatedAt; blank means default |
+| sortDir | asc | asc or desc, case-insensitive; blank means default |
+| page | 0 | Zero-based nonnegative integer |
+| size | 20 | Integer from 1 through 100 |
+
+Invalid values return 400 without clamping. Offset above Integer.MAX_VALUE is rejected.
+No parameters continues to return active rows ordered by id ASC, page 0, size 20.
+Unknown query parameters remain ignored; they do not add supported filters.
+
+Search matches a literal substring in nameAr OR case-insensitive nameEn. SQL LIKE
+characters %, _ and the chosen escape character ! are escaped; a backslash is literal.
+Arabic characters are matched as supplied, with no diacritic removal, letter unification,
+transliteration or fuzzy matching. English uses LOWER with Locale.ROOT input folding;
+database collation determines database case behavior and name ordering. Stored names are
+unchanged. Null English names still allow Arabic matches.
+
+All optional filters combine with AND and archived_at IS NULL is always applied.
+Unknown positive parent IDs or unmatched combinations return an empty page, not 404;
+filtering does not look up parents. All statuses are readable by every existing read role.
+Sorting uses only allowlisted properties, with id ASC appended for non-ID sorts. Sorting
+by ID uses only the requested direction. PostgreSQL defaults place null nameEn last for
+ascending order and first for descending order. Offset pages are not a snapshot across
+concurrent writes. Filtered counts and all eleven response fields remain unchanged.
+
+Example: GET /api/v1/villages?search=Example&governorateId=2&status=VERIFIED&sortBy=nameEn&sortDir=desc&page=0&size=20
+
+Implementation uses JpaSpecificationExecutor with a small private service Specification
+builder and a bounded PageRequest. No fetch joins, parent lookups, new endpoints or schema
+changes are needed. Existing fixed-ID repository listing remains available for compatibility.
+Existing governorate/authority indexes and the active-row partial status index support
+filters. Ordinary name B-tree indexes generally do not speed up LOWER(name) LIKE '%term%'.
+Trigram or active composite indexes require measured evidence and a separately reviewed
+new migration; no migration is part of Feature 4. Counts and deep offsets may be expensive.
 
 POST and full PUT request (illustrative existing parent IDs):
 
@@ -154,8 +190,8 @@ Production security/CSRF/JWT configuration is unchanged.
 
 Timestamps alone do NOT satisfy actor-aware who/when audit history. Audit integration,
 actor retention and important-change history remain outstanding team work; no audit system
-or schema was invented here. Advanced Village Search/filtering/flexible sorting, alternate
-or historical Village Names and Village Relations are separate features. Source management
+or schema was invented here. Feature 4 adds Village Search/filtering/flexible sorting. Alternate or historical Village
+Names and Village Relations remain separate features. Source management
 stays in Data Quality. Its current existence lookup includes archived IDs, so archive does
 not prevent other modules from creating references. Public Village lookup integration
 remains to be agreed with consumers. No full project-wide assignment compliance is claimed.
@@ -179,7 +215,7 @@ real JWT verification or end-to-end persistence. Service locks are mocked; annot
 do not establish database concurrency. Architecture verification uses the existing
 ModulithArchitectureTest.
 
-Verified integration run: VillageRepositoryIntegrationTest — 40 tests passed, 0 failures, 0 errors, 0 skipped, on the dedicated qaryati_test_db using PostgreSQL 17.4.
+Historical Village Management integration run (before Feature 4): VillageRepositoryIntegrationTest — 40 tests passed, 0 failures, 0 errors, 0 skipped, on the dedicated qaryati_test_db using PostgreSQL 17.4.
 - VillageRepositoryIntegrationTest: full mappings/statuses, nullable parents, composite FK,
   scoped/archived uniqueness, nullability/length/CHECK constraints, numeric overflow and
   PostgreSQL rounding, microsecond timestamps, active page/count/ID order, archived lookup/
@@ -219,3 +255,63 @@ Nonfailure notices: compiler annotation processing, Mockito dynamic agent attach
 and expected malformed-request resolver warnings. No unstable PageImpl warning occurred.
 Guard checks use dummy values and mocked JDBC only; they establish guard behavior,
 not live database identity, schema compatibility, or PostgreSQL test success.
+
+## Feature 4 verification scope
+
+Service unit and production-security MVC tests cover validation, literal search predicates,
+filter intersection, allowlisted deterministic sorting, pagination and the existing JSON
+contract. PostgreSQL integration scenarios exercise the production Specification through
+the service and real repository under the existing guarded rollback transaction. They cover
+Arabic/English and wildcard search, nullable names/authorities, statuses, filter intersection,
+unknown parents, archived exclusion/counts, sorting/null ordering and page boundaries.
+The complete VillageRepositoryIntegrationTest class, including these new scenarios, passed
+67 tests in the approved PostgreSQL integration run recorded below.
+The database guard, approval requirements, rollback protections and prohibited application
+database targets documented above remain unchanged.
+
+### Feature 4 offline verification (2026-11-04)
+
+Production sources (201) and test sources (73), including the repository scenarios,
+compiled successfully offline with Java 21. Only VillageServiceTest and VillageControllerTest
+executed: 231 invocations, 0 failures, 0 errors, 0 skipped (85 service, 146 MVC/security).
+The MVC slice asserts absence of DataSource, EntityManagerFactory and Flyway beans; only a
+mock servlet context runs, with JWT/user/service dependencies mocked. This offline run
+started no application server and performed no live database connection or migration.
+The separate PostgreSQL integration run is recorded below.
+
+Focused command (using the locally cached Maven 3.9.11 distribution):
+
+```powershell
+mvn -o '-Dtest=com.qaryati.village.service.VillageServiceTest,com.qaryati.village.controller.VillageControllerTest' test
+```
+
+The first run exposed eight Mockito assertion failures in newly added tests; those test
+assertions were corrected and the final focused run passed. Nonfailure compiler/Mockito
+notices include unchecked test mocking, annotation processing and dynamic agent attachment.
+
+### Feature 4 PostgreSQL integration verification (2026-11-04)
+
+VillageRepositoryIntegrationTest passed all 67 tests: 0 failures, 0 errors, 0 skipped.
+BUILD SUCCESS completed at 2026-11-04 18:37:56 +02:00 on the approved dedicated
+qaryati_test_db. The saved Surefire class report confirms the 67-test result; the approved
+database and build completion time were supplied with the verified execution results.
+Together with the focused offline run above, Feature 4 has 231 passing offline invocations
+(85 service, 146 MVC/security) and 67 passing PostgreSQL integration invocations.
+
+The integration class exercises existing mappings and integrity constraints plus the
+Feature 4 production Specification: literal Arabic/English substring search and LIKE
+escaping, active-only content and filtered counts, intersecting filters and all statuses,
+unknown parents, nullable names/authorities, supported sorting with deterministic ID
+tie-breaking, null ordering, pagination and empty/out-of-range pages. These results establish
+the tested PostgreSQL behavior, not load performance or concurrent pagination snapshots.
+
+Every rerun still requires explicit approval and independent test database identity/schema
+verification before enabling qaryati.village-tests.database-verified=true. The exact
+jdbc:postgresql://localhost:5432/qaryati_test_db allowlist, per-connection PostgreSQL database/configured-user identity
+checks, test profile, transaction rollback protection, disabled Flyway/SQL initialization and
+Hibernate validation-only settings remain unchanged. Never target qaryati_db or
+qaryati_governorate_dev. Tests do not prepare or migrate the schema.
+
+Fixture row changes roll back, but PostgreSQL IDENTITY sequences can advance despite
+rollback, including failed insert attempts; gaps in generated IDs are expected. No sequence
+reset is part of the tests. Lock-mode coverage does not prove contention or archive races.
