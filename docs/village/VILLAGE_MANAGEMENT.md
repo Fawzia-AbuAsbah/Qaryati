@@ -190,8 +190,10 @@ Production security/CSRF/JWT configuration is unchanged.
 
 Timestamps alone do NOT satisfy actor-aware who/when audit history. Audit integration,
 actor retention and important-change history remain outstanding team work; no audit system
-or schema was invented here. Feature 4 adds Village Search/filtering/flexible sorting. Alternate or historical Village
-Names and Village Relations remain separate features. Source management
+or schema was invented here. Feature 4 adds Village Search/filtering/flexible sorting.
+Feature 5 implements alternate and historical Village Names through nested endpoints;
+see [VILLAGE_NAMES.md](VILLAGE_NAMES.md). Village Relations remains a separate feature.
+Source management
 stays in Data Quality. Its current existence lookup includes archived IDs, so archive does
 not prevent other modules from creating references. Public Village lookup integration
 remains to be agreed with consumers. No full project-wide assignment compliance is claimed.
