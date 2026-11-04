@@ -30,8 +30,15 @@ public class VillageController {
     @PreAuthorize("hasAnyRole('VIEWER', 'EDITOR', 'ADMIN')")
     public VillagePageResponse getActive(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return VillagePageResponse.from(service.getActive(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long governorateId,
+            @RequestParam(required = false) Long localAuthorityId,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
+        return VillagePageResponse.from(service.getActive(
+                page, size, search, governorateId, localAuthorityId, status, sortBy, sortDir));
     }
 
     @GetMapping("/{id}")

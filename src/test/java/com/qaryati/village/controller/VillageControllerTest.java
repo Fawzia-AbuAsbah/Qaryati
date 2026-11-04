@@ -109,7 +109,7 @@ class VillageControllerTest {
     @CsvSource({"0,1", "2,10", "0,100"})
     void explicitPaginationPreservesContentAndMetadata(int page, int size) throws Exception {
         authenticate("VIEWER");
-        when(service.getActive(page, size)).thenReturn(
+        when(service.getActive(page, size, null, null, null, null, "id", "asc")).thenReturn(
                 new PageImpl<>(List.of(RESPONSE), PageRequest.of(page, size), 101));
         var result = mvc.perform(endpoint("PAGE").param("page", "" + page).param("size", "" + size)
                 .header("Authorization", "Bearer token")).andExpect(status().isOk())
@@ -125,18 +125,18 @@ class VillageControllerTest {
                 .andExpect(jsonPath("$.last").value(false))
                 .andExpect(jsonPath("$.empty").value(false));
         assertVillage(result, "$.content[0]");
-        verify(service).getActive(page, size);
+        verify(service).getActive(page, size, null, null, null, null, "id", "asc");
         verifyNoMoreInteractions(service);
     }
 
     @Test
     void emptyPageSerializes() throws Exception {
         authenticate("VIEWER");
-        when(service.getActive(0, 20)).thenReturn(Page.empty(PageRequest.of(0, 20)));
+        when(service.getActive(0, 20, null, null, null, null, "id", "asc")).thenReturn(Page.empty(PageRequest.of(0, 20)));
         mvc.perform(endpoint("PAGE").header("Authorization", "Bearer token"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty())
                 .andExpect(jsonPath("$.totalElements").value(0));
-        verify(service).getActive(0, 20);
+        verify(service).getActive(0, 20, null, null, null, null, "id", "asc");
     }
 
     @ParameterizedTest
@@ -144,12 +144,12 @@ class VillageControllerTest {
     void servicePaginationRejectionsAre400WithoutClamping(int page, int size) throws Exception {
         authenticate("VIEWER");
         // Bounds are independently exercised against the real Service in VillageServiceTest.
-        when(service.getActive(page, size)).thenThrow(
+        when(service.getActive(page, size, null, null, null, null, "id", "asc")).thenThrow(
                 new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid pagination"));
         error(mvc.perform(endpoint("PAGE").param("page", "" + page).param("size", "" + size)
                 .header("Authorization", "Bearer token")), 400, "Bad Request", BASE)
                 .andExpect(jsonPath("$.message").value("Invalid pagination"));
-        verify(service).getActive(page, size);
+        verify(service).getActive(page, size, null, null, null, null, "id", "asc");
         verifyNoMoreInteractions(service);
     }
 
@@ -291,7 +291,7 @@ class VillageControllerTest {
     @Test
     void emptyPageHasExactStableSchema() throws Exception {
         authenticate("VIEWER");
-        when(service.getActive(0, 20)).thenReturn(Page.empty(PageRequest.of(0, 20)));
+        when(service.getActive(0, 20, null, null, null, null, "id", "asc")).thenReturn(Page.empty(PageRequest.of(0, 20)));
         mvc.perform(endpoint("PAGE").header("Authorization", "Bearer token"))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
@@ -300,6 +300,45 @@ class VillageControllerTest {
                          "hasPrevious":false,"empty":true}
                         """, org.springframework.test.json.JsonCompareMode.STRICT));
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"VIEWER", "EDITOR", "ADMIN"})
+    void filteredReadUsesProductionReadPermissionsAndStablePage(String role) throws Exception {
+        authenticate(role);
+        when(service.getActive(1, 2, "  \u0642\u0631\u064a\u0629%_!  ", 2L, 7L, "VERIFIED", "nameEn", "DESC"))
+                .thenReturn(new PageImpl<>(List.of(RESPONSE), PageRequest.of(1, 2), 3));
+        mvc.perform(endpoint("PAGE").header("Authorization", "Bearer token")
+                        .param("page", "1").param("size", "2").param("search", "  \u0642\u0631\u064a\u0629%_!  ")
+                        .param("governorateId", "2").param("localAuthorityId", "7")
+                        .param("status", "VERIFIED").param("sortBy", "nameEn").param("sortDir", "DESC"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.*", org.hamcrest.Matchers.hasSize(11)))
+                .andExpect(jsonPath("$.totalElements").value(3)).andExpect(jsonPath("$.totalPages").value(2));
+        verify(service).getActive(1, 2, "  \u0642\u0631\u064a\u0629%_!  ", 2L, 7L, "VERIFIED", "nameEn", "DESC");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"governorateId,abc", "localAuthorityId,abc", "governorateId,9223372036854775808"})
+    void malformedFilterIdsAre400BeforeService(String parameter, String value) throws Exception {
+        authenticate("VIEWER");
+        mvc.perform(endpoint("PAGE").header("Authorization", "Bearer token").param(parameter, value))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"search,181", "governorateId,0", "localAuthorityId,-1", "status,UNKNOWN",
+            "sortBy,governorate.nameAr", "sortDir,sideways"})
+    void filterValidationErrorsUseExisting400Handler(String parameter, String value) throws Exception {
+        authenticate("VIEWER");
+        if (parameter.equals("search")) value = "x".repeat(181);
+        when(service.getActive(org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.nullable(String.class), org.mockito.ArgumentMatchers.nullable(Long.class),
+                org.mockito.ArgumentMatchers.nullable(Long.class), org.mockito.ArgumentMatchers.nullable(String.class),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid filter"));
+        error(mvc.perform(endpoint("PAGE").header("Authorization", "Bearer token").param(parameter, value)),
+                400, "Bad Request", BASE).andExpect(jsonPath("$.message").value("Invalid filter"));
+    }
+
     private static String add(String fields) {
         return JSON.substring(0, JSON.length() - 1) + "," + fields + "}";
     }
@@ -328,7 +367,7 @@ class VillageControllerTest {
             case "POST" -> when(service.create(REQUEST)).thenReturn(RESPONSE);
             case "PUT" -> when(service.update(1L, REQUEST)).thenReturn(RESPONSE);
             case "ID" -> when(service.getById(1L)).thenReturn(RESPONSE);
-            case "PAGE" -> when(service.getActive(0, 20)).thenReturn(
+            case "PAGE" -> when(service.getActive(0, 20, null, null, null, null, "id", "asc")).thenReturn(
                     new PageImpl<>(List.of(RESPONSE), PageRequest.of(0, 20), 1));
         }
     }
@@ -347,7 +386,7 @@ class VillageControllerTest {
             case "POST" -> verify(service).create(REQUEST);
             case "PUT" -> verify(service).update(1L, REQUEST);
             case "ID" -> verify(service).getById(1L);
-            case "PAGE" -> verify(service).getActive(0, 20);
+            case "PAGE" -> verify(service).getActive(0, 20, null, null, null, null, "id", "asc");
             case "DELETE" -> verify(service).archive(1L);
         }
     }

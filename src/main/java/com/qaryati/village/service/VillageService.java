@@ -12,10 +12,13 @@ import com.qaryati.village.mapper.VillageMapper;
 import com.qaryati.village.repository.GovernorateRepository;
 import com.qaryati.village.repository.LocalAuthorityRepository;
 import com.qaryati.village.repository.VillageRepository;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +27,9 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Set;
 
 /** Request Bean Validation belongs to the caller; timestamps do not provide actor-aware auditing. */
 @Service
@@ -81,6 +87,13 @@ public class VillageService {
 
     @Transactional(readOnly = true)
     public Page<VillageResponse> getActive(int page, int size) {
+        return getActive(page, size, null, null, null, null, "id", "asc");
+    }
+
+    @Transactional(readOnly = true)
+    public Page<VillageResponse> getActive(int page, int size, String search,
+                                          Long governorateId, Long localAuthorityId,
+                                          String status, String sortBy, String sortDir) {
         if (page < 0 || size < 1 || size > 100) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Page must be nonnegative and size must be between 1 and 100");
@@ -89,9 +102,53 @@ public class VillageService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Page offset exceeds the supported limit");
         }
-        // Repository supplies static ID ascending ordering; no caller sort is accepted.
-        return repository.findByArchivedAtIsNullOrderByIdAsc(PageRequest.of(page, size))
-                .map(mapper::toResponse);
+        String term = search == null ? "" : search.strip();
+        if (term.length() > 180) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search must be at most 180 characters");
+        }
+        if (governorateId != null && governorateId <= 0
+                || localAuthorityId != null && localAuthorityId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Filter IDs must be positive");
+        }
+        VillageStatus villageStatus = null;
+        if (status != null && !status.isBlank()) {
+            try {
+                villageStatus = VillageStatus.valueOf(status);
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported village status");
+            }
+        }
+        String field = sortBy == null || sortBy.isBlank() ? "id" : sortBy;
+        if (!Set.of("id", "nameAr", "nameEn", "createdAt", "updatedAt").contains(field)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported village sort field");
+        }
+        String direction = sortDir == null || sortDir.isBlank() ? "asc" : sortDir;
+        if (!direction.equalsIgnoreCase("asc") && !direction.equalsIgnoreCase("desc")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Sort direction must be asc or desc");
+        }
+        Sort sort = Sort.by(direction.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, field);
+        if (!field.equals("id")) sort = sort.and(Sort.by("id"));
+        return repository.findAll(activeSpecification(term, governorateId, localAuthorityId, villageStatus),
+                PageRequest.of(page, size, sort)).map(mapper::toResponse);
+    }
+
+    private Specification<Village> activeSpecification(String term, Long governorateId,
+                                                       Long localAuthorityId, VillageStatus status) {
+        return (root, query, cb) -> {
+            var predicates = new ArrayList<Predicate>();
+            predicates.add(cb.isNull(root.get("archivedAt")));
+            if (governorateId != null) predicates.add(cb.equal(root.get("governorate").get("id"), governorateId));
+            if (localAuthorityId != null) predicates.add(cb.equal(root.get("localAuthority").get("id"), localAuthorityId));
+            if (status != null) predicates.add(cb.equal(root.get("status"), status));
+            if (!term.isEmpty()) {
+                // Escape the escape character first. Patterns remain bound Criteria values.
+                String literal = term.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+                predicates.add(cb.or(
+                        cb.like(root.get("nameAr"), "%" + literal + "%", '!'),
+                        cb.like(cb.lower(root.get("nameEn")), "%" + literal.toLowerCase(Locale.ROOT) + "%", '!')));
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
     }
 
     @Transactional

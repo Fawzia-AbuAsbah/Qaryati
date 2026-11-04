@@ -12,6 +12,8 @@ import org.junit.jupiter.params.provider.*;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -107,7 +109,14 @@ class VillageServiceTest {
     void neverUsesPhysicalDeleteOrUnboundedListing() {
         var forbidden = mockingDetails(repository).getInvocations().stream()
                 .map(call -> call.getMethod().getName())
-                .filter(name -> name.startsWith("delete") || name.equals("findAll")).toList();
+                .filter(name -> name.startsWith("delete")).toList();
+        for (var call : mockingDetails(repository).getInvocations()) {
+            if (call.getMethod().getName().equals("findAll")) {
+                assertEquals(2, call.getArguments().length);
+                assertInstanceOf(Specification.class, call.getArgument(0));
+                assertTrue(((Pageable) call.getArgument(1)).isPaged());
+            }
+        }
         assertTrue(forbidden.isEmpty(), forbidden.toString());
     }
 
@@ -218,19 +227,19 @@ class VillageServiceTest {
 
     @ParameterizedTest
     @CsvSource({"0,1", "0,100", "2,20", "2147483647,1"})
-    void activePageIsBoundedUnsortedAndPreservesMetadata(int page, int size) {
+    void activePageIsBoundedIdSortedAndPreservesMetadata(int page, int size) {
         var pageable = PageRequest.of(page, size);
         var source = new PageImpl<>(List.of(village), pageable, pageable.getOffset() + size + 7);
-        when(repository.findByArchivedAtIsNullOrderByIdAsc(any())).thenReturn(source);
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(source);
         var result = service.getActive(page, size);
         assertEquals(List.of(mapper.toResponse(village)), result.getContent());
         assertEquals(source.getNumber(), result.getNumber());
         assertEquals(source.getSize(), result.getSize());
         assertEquals(source.getTotalElements(), result.getTotalElements());
         assertEquals(source.getTotalPages(), result.getTotalPages());
-        verify(repository).findByArchivedAtIsNullOrderByIdAsc(argThat(value ->
+        verify(repository).findAll(any(Specification.class), argThat((Pageable value) ->
                 value.isPaged() && value.getPageNumber() == page && value.getPageSize() == size
-                        && value.getSort().isUnsorted()));
+                        && value.getSort().equals(Sort.by("id"))));
         verifyNoMoreInteractions(repository);
         verifyNoInteractions(governorates, authorities, clock);
     }
@@ -238,7 +247,7 @@ class VillageServiceTest {
     @Test
     void emptyPageRemainsEmptyWithOriginalTotal() {
         var source = new PageImpl<Village>(List.of(), PageRequest.of(3, 20), 2);
-        when(repository.findByArchivedAtIsNullOrderByIdAsc(any())).thenReturn(source);
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(source);
         var result = service.getActive(3, 20);
         assertTrue(result.isEmpty());
         assertEquals(2, result.getTotalElements());
@@ -250,6 +259,96 @@ class VillageServiceTest {
     void invalidPaginationDoesNotAccessRepository(int page, int size) {
         status(400, () -> service.getActive(page, size));
         verifyNoInteractions(repository, governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"id,asc", "id,DESC", "nameAr,asc", "nameAr,desc", "nameEn,asc", "nameEn,DESC",
+            "createdAt,asc", "createdAt,desc", "updatedAt,asc", "updatedAt,desc"})
+    void allowlistedSortHasDeterministicIdTieBreaker(String field, String direction) {
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty(PageRequest.of(0, 20)));
+        service.getActive(0, 20, null, null, null, null, field, direction);
+        Sort expected = Sort.by(Sort.Direction.fromString(direction), field);
+        if (!field.equals("id")) expected = expected.and(Sort.by("id"));
+        var captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findAll(any(Specification.class), captor.capture());
+        assertEquals(expected, captor.getValue().getSort());
+    }
+
+    static Stream<Arguments> invalidFilters() {
+        return Stream.of(
+                Arguments.of("x".repeat(181), null, null, null, "id", "asc"),
+                Arguments.of(null, 0L, null, null, "id", "asc"),
+                Arguments.of(null, -1L, null, null, "id", "asc"),
+                Arguments.of(null, null, 0L, null, "id", "asc"),
+                Arguments.of(null, null, -1L, null, "id", "asc"),
+                Arguments.of(null, null, null, "verified", "id", "asc"),
+                Arguments.of(null, null, null, "UNKNOWN", "id", "asc"),
+                Arguments.of(null, null, null, null, "governorate.nameAr", "asc"),
+                Arguments.of(null, null, null, null, "id desc", "asc"),
+                Arguments.of(null, null, null, null, "id", "sideways"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidFilters")
+    void invalidFiltersStopBeforeRepository(String search, Long governorateId, Long authorityId,
+                                            String statusValue, String field, String direction) {
+        status(400, () -> service.getActive(0, 20, search, governorateId, authorityId, statusValue, field, direction));
+        verifyNoInteractions(repository, governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @EnumSource(VillageStatus.class)
+    @SuppressWarnings("unchecked")
+    void combinedFiltersUseActiveAndNameOrWithoutParentLookups(VillageStatus state) {
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty(PageRequest.of(0, 20)));
+        assertTrue(service.getActive(0, 20, "  A%_!  ", 10L, 20L, state.name(), "id", "asc").isEmpty());
+        var captor = ArgumentCaptor.forClass(Specification.class);
+        verify(repository).findAll(captor.capture(), any(Pageable.class));
+        var root = mock(jakarta.persistence.criteria.Root.class, RETURNS_DEEP_STUBS);
+        var cb = mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+        captor.getValue().toPredicate(root, null, cb);
+        verify(cb).isNull(root.get("archivedAt"));
+        verify(cb).equal(root.get("governorate").get("id"), 10L);
+        verify(cb).equal(root.get("localAuthority").get("id"), 20L);
+        verify(cb).equal(root.get("status"), state);
+        verify(cb).like(root.get("nameAr"), "%A!%!_!!%", '!');
+        verify(cb).like(cb.lower(root.get("nameEn")), "%a!%!_!!%", '!');
+        verify(cb).or((jakarta.persistence.criteria.Predicate) null, null);
+        var predicates = ArgumentCaptor.forClass(jakarta.persistence.criteria.Predicate[].class);
+        verify(cb).and(predicates.capture());
+        assertEquals(5, predicates.getValue().length);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  ", "\t\n"})
+    @SuppressWarnings("unchecked")
+    void emptySearchBuildsOnlyArchivePredicateAndBlankSortUsesDefaults(String search) {
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty(PageRequest.of(0, 20)));
+        service.getActive(0, 20, search, null, null, "", "", "");
+        var captor = ArgumentCaptor.forClass(Specification.class);
+        verify(repository).findAll(captor.capture(), eq(PageRequest.of(0, 20, Sort.by("id"))));
+        var root = mock(jakarta.persistence.criteria.Root.class);
+        var cb = mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+        captor.getValue().toPredicate(root, null, cb);
+        verify(cb).isNull(root.get("archivedAt"));
+        var predicates = ArgumentCaptor.forClass(jakarta.persistence.criteria.Predicate[].class);
+        verify(cb).and(predicates.capture());
+        assertEquals(1, predicates.getValue().length);
+        verifyNoMoreInteractions(cb);
+    }
+
+    @Test
+    void searchLengthIsCheckedAfterTrimming() {
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty(PageRequest.of(0, 20)));
+        assertDoesNotThrow(() -> service.getActive(0, 20, "  " + "x".repeat(180) + "  ",
+                Long.MAX_VALUE, Long.MAX_VALUE, null, null, null));
+        verifyNoInteractions(governorates, authorities);
     }
 
     @ParameterizedTest

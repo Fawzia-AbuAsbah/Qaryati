@@ -302,6 +302,141 @@ class VillageRepositoryIntegrationTest {
         state("23503", () -> jdbc.update("delete from public.local_authorities where id=?", authority.getId()));
     }
 
+    // Exercise the production private Specification builder through the real service/repository.
+    // The enclosing guarded rollback transaction supplies the persistence boundary.
+    private org.springframework.data.domain.Page<com.qaryati.village.dto.VillageResponse> search(
+            int page, int size, String term, Long governorateId, Long authorityId,
+            String status, String field, String direction) {
+        var service = new com.qaryati.village.service.VillageService(
+                repository, governorates, authorities, new VillageMapper());
+        return service.getActive(page, size, term, governorateId, authorityId, status, field, direction);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\u0642\u0631\u064a\u0629", "MiXeD", "%", "_", "!", "!%_", "\\"})
+    void literalArabicOrCaseInsensitiveEnglishSearchExcludesArchivedAndCounts(String term) {
+        var parent = governorate();
+        var arabic = village(parent);
+        arabic.setNameAr("\u0642\u0628\u0644" + term + "\u0628\u0639\u062f");
+        arabic.setNameEn(null);
+        repository.saveAndFlush(arabic);
+        var english = village(parent);
+        english.setNameEn("before" + term.toUpperCase(Locale.ROOT) + "after");
+        repository.saveAndFlush(english);
+        var other = village(parent);
+        other.setNameAr("unrelated");
+        other.setNameEn(null);
+        repository.saveAndFlush(other);
+        var archived = village(parent);
+        archived.setNameEn(term);
+        archived.setArchivedAt(TIME);
+        repository.saveAndFlush(archived);
+        entityManager.clear();
+        var first = search(0, 1, "  " + term + "  ", parent.getId(), null, null, "id", "asc");
+        assertEquals(2, first.getTotalElements());
+        assertEquals(2, first.getTotalPages());
+        assertEquals(arabic.getId(), first.getContent().getFirst().id());
+        var second = search(1, 1, term, parent.getId(), null, null, "id", "asc");
+        assertEquals(english.getId(), second.getContent().getFirst().id());
+        var beyond = search(2, 1, term, parent.getId(), null, null, "id", "asc");
+        assertTrue(beyond.isEmpty());
+        assertEquals(2, beyond.getTotalElements());
+        assertTrue(repository.findById(archived.getId()).isPresent());
+    }
+
+    @ParameterizedTest
+    @EnumSource(VillageStatus.class)
+    void optionalFiltersIntersectWithoutParentExistenceLookups(VillageStatus status) {
+        var parent = governorate();
+        var otherParent = governorate();
+        var authority = authority(parent);
+        var value = village(parent);
+        value.setLocalAuthority(authority);
+        value.setStatus(status);
+        value.setNameEn("Needle");
+        repository.saveAndFlush(value);
+        for (var state : VillageStatus.values()) {
+            var withoutAuthority = village(parent);
+            withoutAuthority.setStatus(state);
+            withoutAuthority.setNameEn("Needle");
+            repository.saveAndFlush(withoutAuthority);
+        }
+        var other = village(otherParent);
+        other.setNameEn("Needle");
+        repository.saveAndFlush(other);
+        entityManager.clear();
+        var combined = search(0, 20, "needle", parent.getId(), authority.getId(), status.name(), "id", "asc");
+        assertEquals(List.of(value.getId()), combined.getContent().stream().map(v -> v.id()).toList());
+        assertEquals(1, combined.getTotalElements());
+        assertEquals(5, search(0, 20, null, parent.getId(), null, null, "id", "asc").getTotalElements());
+        assertEquals(2, search(0, 20, null, parent.getId(), null, status.name(), "id", "asc").getTotalElements());
+        assertEquals(1, search(0, 20, null, null, authority.getId(), null, "id", "asc").getTotalElements());
+        assertTrue(search(0, 20, null, otherParent.getId(), authority.getId(), null, "id", "asc").isEmpty());
+        assertTrue(search(0, 20, null, Long.MAX_VALUE, null, null, "id", "asc").isEmpty());
+        assertTrue(search(0, 20, null, null, Long.MAX_VALUE, null, "id", "asc").isEmpty());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t\n"})
+    void blankSearchRetainsNullAuthorityRows(String term) {
+        var parent = governorate();
+        var value = repository.saveAndFlush(village(parent));
+        var result = search(0, 20, term, parent.getId(), null, null, "id", "asc");
+        assertEquals(List.of(value.getId()), result.getContent().stream().map(v -> v.id()).toList());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"id,asc", "id,desc", "nameAr,asc", "nameAr,desc", "nameEn,asc", "nameEn,desc",
+            "createdAt,asc", "createdAt,desc", "updatedAt,asc", "updatedAt,desc"})
+    void supportedSortingAndNullOrderingAreAppliedBeforePagination(String field, String direction) {
+        var parent = governorate();
+        var values = new ArrayList<Village>();
+        for (int i = 0; i < 3; i++) {
+            var value = village(parent);
+            value.setNameAr("sort-" + (2 - i));
+            value.setNameEn(i == 2 ? null : "same");
+            value.setCreatedAt(TIME.plusSeconds(i == 2 ? 1 : 0));
+            value.setUpdatedAt(TIME.plusSeconds(i == 2 ? 1 : 0));
+            repository.saveAndFlush(value);
+            values.add(value);
+        }
+        entityManager.clear();
+        Comparator<Village> comparator = switch (field) {
+            case "nameAr" -> Comparator.comparing(Village::getNameAr);
+            case "nameEn" -> Comparator.comparing(Village::getNameEn, Comparator.nullsLast(Comparator.naturalOrder()));
+            case "createdAt" -> Comparator.comparing(Village::getCreatedAt);
+            case "updatedAt" -> Comparator.comparing(Village::getUpdatedAt);
+            default -> Comparator.comparing(Village::getId);
+        };
+        if (direction.equals("desc")) comparator = comparator.reversed();
+        if (!field.equals("id")) comparator = comparator.thenComparing(Village::getId);
+        var expected = values.stream().sorted(comparator).map(Village::getId).toList();
+        var actual = new ArrayList<Long>();
+        for (int page = 0; page < 3; page++) {
+            var result = search(page, 1, null, parent.getId(), null, null, field, direction);
+            assertEquals(3, result.getTotalElements());
+            actual.add(result.getContent().getFirst().id());
+        }
+        assertEquals(expected, actual);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"asc", "desc"})
+    void equalArabicNamesAcrossGovernoratesUseIdAscending(String direction) {
+        String term = unique();
+        var first = village(governorate());
+        first.setNameAr(term);
+        repository.saveAndFlush(first);
+        var second = village(governorate());
+        second.setNameAr(term);
+        repository.saveAndFlush(second);
+        assertEquals(first.getId(), search(0, 1, term, null, null, null, "nameAr", direction)
+                .getContent().getFirst().id());
+        assertEquals(second.getId(), search(1, 1, term, null, null, null, "nameAr", direction)
+                .getContent().getFirst().id());
+    }
+
     private Governorate governorate() {
         var value = new Governorate();
         value.setNameAr(unique());
