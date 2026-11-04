@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME in your local .env}
+      POSTGRES_USER: ${DB_USER:?Set DB_USER in your local .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your local .env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:?Set DB_NAME in your local .env}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:?Set DB_USER in your local .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your local .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your local .env}
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_CLEAN_DISABLED: "true"
+      SPRING_FLYWAY_VALIDATE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_DEFAULT_SCHEMA: public
+      SPRING_FLYWAY_SCHEMAS: public
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: public
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      SPRING_JPA_SHOW_SQL: "false"
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
