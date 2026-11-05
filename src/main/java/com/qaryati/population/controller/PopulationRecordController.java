@@ -6,7 +6,6 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.net.URI;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/population-records")
@@ -22,7 +21,10 @@ public class PopulationRecordController {
     }
 
     @GetMapping
-    public List<PopulationRecordResponse> getAll() { return service.getAll(); }
+    public PopulationRecordPage getAll(@RequestParam(defaultValue = "0") int page,
+                                      @RequestParam(defaultValue = "20") int size) {
+        return service.getAll(page, size);
+    }
 
     @GetMapping("/{id}")
     public PopulationRecordResponse getById(@PathVariable Long id) { return service.getById(id); }

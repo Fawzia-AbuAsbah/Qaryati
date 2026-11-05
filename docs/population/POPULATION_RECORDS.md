@@ -7,12 +7,49 @@ report conflicting counts without overwriting each other's observations.
 
 ## Availability
 
-All five service operations (create, list, get, update, delete) remain blocked
-with HTTP 503 pending provider-owned authorization, draft visibility, village
-and source validation, and transactional audit contracts. HTTP authentication,
-CSRF and request validation can reject requests before they reach that boundary.
-Repository tests demonstrate persistence behavior, not completion of CRUD or
-authorization to use repository methods directly from another module.
+All five service operations are implemented at `/api/v1/population-records`.
+Every service entry point checks authentication and roles before repository access.
+ADMIN and EDITOR may create, read, replace and delete; VIEWER may read VERIFIED
+records only. VERIFIED means published. ADMIN is not subject to an EDITOR-only
+policy. User, role and administrator settings management is outside this module.
+
+POST creates DRAFT records. PUT and DELETE require DRAFT and use the existing
+pessimistic record lock. PUT cannot change villageId. POST/PUT require an existing,
+unarchived VERIFIED village and an existing source, through public Village and
+Data Quality APIs only. Reads and DRAFT deletions do not check current parent
+eligibility. Source existence does not establish credibility: manual verification
+of credibility and factual accuracy is required before future approval. Approval
+by EDITOR or ADMIN will suffice for publication, but no approval, rejection or
+conflict workflow is introduced here. Requests reject verification status, IDs,
+timestamps and other unknown fields.
+
+GET collection returns `{content, page, size, totalElements, totalPages}` with
+defaults `page=0,size=20`, positive size at most 100 and nonnegative page. Sorting
+is `referenceYear DESC, id ASC`. VIEWER status filtering happens in the repository
+before pagination/counting; hidden detail returns 404. ADMIN/EDITOR read all
+statuses. Offset pages are deterministic for a stable dataset, not a snapshot
+across requests.
+
+Mutations are transactional and reads are read-only. CREATE, UPDATE and DELETE
+call AuditWriter in the mutation transaction; failures propagate and roll back.
+Immutable AuditSnapshot values contain villageId, sourceId, referenceYear and
+populationCount only. They omit methodology, referenceDate, notes, verification
+status and timestamps, so this is not a complete field-level change history.
+
+Village eligibility is a point-in-time snapshot: the public lookup acquires no
+parent lock/version token. Archive/status changes can race with Population writes.
+Population pessimistic locks serialize mutations but do not reject stale clients:
+a later PUT can overwrite an earlier client's values. There is no optimistic
+version, ETag or lost-update prevention guarantee. Source FK checks remain the
+final existence guard when a source disappears after lookup.
+
+Safe errors: 400 for invalid requests, IDs or pagination; 401 for absent/invalid
+authentication; 403 for insufficient roles; 404 for missing references or hidden
+records; 409 for duplicate observations, non-DRAFT mutations, immutable village
+changes or ineligible villages; 500 for unexpected infrastructure errors without
+internal details. Only SQLSTATE 23505 with exact constraint
+`uq_population_observation` is translated from persistence to duplicate conflict.
+Other integrity errors remain unexpected infrastructure failures.
 
 New records are DRAFT. Entity update and deletion guards reject non-DRAFT
 records; repository locking uses PESSIMISTIC_WRITE. Review transitions are not
@@ -64,8 +101,32 @@ Without database access, the following command runs only Population tests that
 do not require PostgreSQL. This is not a substitute for integration testing:
 
 ```powershell
-./mvnw.cmd '-Dspring.profiles.active=test' '-Dspring.flyway.clean-disabled=true' '-Dtest=com.qaryati.population.**.*Test,!com.qaryati.population.repository.PopulationRecordRepositoryIntegrationTest' test
+./mvnw.cmd '-Dtest=PopulationRecordServiceTest,PopulationTransactionTest,PopulationRecordControllerTest,PopulationArchitectureTest,PopulationRecordTest,PopulationRecordMapperTest,PopulationRecordRequestValidationTest,PopulationTestDatabaseGuardTest' test
 ```
+
+## CRUD integration verification, 2026-11-05
+
+Final selected run: **98 tests, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS**
+using Java 21.0.12.1 and cached Maven 3.9.11. The initial sandboxed compile could
+not read a cached dependency; the selected tests were rerun with approved cache
+access. Earlier test-double setup failures were corrected before the final run.
+
+Use the explicit database-free selection above on JDK 21. Controller tests load
+the production SecurityConfig and JwtAuthenticationConverterConfig with mocked
+database user lookup and JWT decoder. They exercise stateless requests without
+CSRF, missing/invalid bearer authentication, database roles and disabled users.
+Service tests cover role boundaries, visibility, pagination, references,
+immutability, DRAFT guards, duplicates, snapshots and propagated audit failures.
+Transaction advice tests verify Spring selects rollback for audit failures on
+each mutation and read-only transactions for both reads; they do not prove live
+PostgreSQL rollback. PopulationArchitectureTest verifies Spring Modulith boundaries
+and restricts Population dependencies to the public cross-module APIs and Common.
+
+The repository integration extension checks VERIFIED filtering/counting and
+ordered paging against PostgreSQL, under the existing pre-context database guard.
+It is compiled but deliberately not executed for this change. No database
+connections, Docker, migrations or broad suites are part of this verification.
+The older verification report below is historical foundation evidence only.
 
 ## Verification on 2026-10-25
 

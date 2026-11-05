@@ -10,14 +10,30 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.*;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** Uses the real blocked service, so tests cannot accidentally enable CRUD with mocks. */
+/** Production stateless bearer security, real service, database-free provider doubles. */
 @WebMvcTest(PopulationRecordController.class)
-@Import({PopulationRecordService.class, GlobalExceptionHandler.class, PopulationRecordExceptionHandler.class})
+@Import({PopulationRecordService.class, GlobalExceptionHandler.class, PopulationRecordExceptionHandler.class,
+        com.qaryati.population.mapper.PopulationRecordMapper.class,
+        com.qaryati.security.config.SecurityConfig.class,
+        com.qaryati.security.config.JwtAuthenticationConverterConfig.class})
 class PopulationRecordControllerTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.qaryati.population.repository.PopulationRecordRepository repository;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.qaryati.village.api.VillageLookupApi villages;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.qaryati.dataquality.api.SourceLookup sources;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.qaryati.dataquality.api.AuditWriter audits;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    org.springframework.security.oauth2.jwt.JwtDecoder decoder;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.qaryati.security.service.DatabaseUserDetailsService userDetails;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.qaryati.security.ratelimit.LoginRateLimitService rateLimits;
     private static final String BASE = "/api/v1/population-records";
     private static final String JSON = """
             {"villageId":1,"referenceYear":2020,"populationCount":100,"methodology":"CENSUS","sourceId":2}
@@ -25,43 +41,36 @@ class PopulationRecordControllerTest {
     @Autowired private MockMvc mvc;
 
     @ParameterizedTest
-    @ValueSource(strings = {"GET", "GET_ONE", "POST", "PUT", "DELETE"})
-    @WithMockUser
-    void allAuthenticatedOperationsRemainBlocked(String operation) throws Exception {
+    @ValueSource(strings = {"GET_ONE", "POST", "PUT", "DELETE"})
+    @WithMockUser(roles = "VIEWER")
+    void viewerCannotWriteAndHiddenItemsAreNotFound(String operation) throws Exception {
         String path = path(operation);
-        mvc.perform(request(method(operation), path).with(csrf())
+        mvc.perform(request(method(operation), path)
                         .contentType(MediaType.APPLICATION_JSON).content(JSON))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.timestamp").isNotEmpty())
-                .andExpect(jsonPath("$.status").value(503))
-                .andExpect(jsonPath("$.error").value("Service Unavailable"))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("blocked")))
+                .andExpect(status().is(operation.equals("GET_ONE") ? 404 : 403))
                 .andExpect(jsonPath("$.path").value(path));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"GET", "GET_ONE", "POST", "PUT", "DELETE"})
     void unauthenticatedRequestsAreUnauthorized(String operation) throws Exception {
-        mvc.perform(request(method(operation), path(operation)).with(csrf())
+        mvc.perform(request(method(operation), path(operation))
                         .accept(MediaType.APPLICATION_JSON).contentType(MediaType.APPLICATION_JSON).content(JSON))
                 .andExpect(status().isUnauthorized());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"POST", "PUT", "DELETE"})
-    @WithMockUser
-    void writesRequireCsrf(String operation) throws Exception {
+    @WithMockUser(roles = "ADMIN")
+    void writesUseBearerSecurityWithoutCsrf(String operation) throws Exception {
         mvc.perform(request(method(operation), path(operation))
                         .contentType(MediaType.APPLICATION_JSON).content(JSON))
-                .andExpect(status().isForbidden());
-        mvc.perform(request(method(operation), path(operation)).with(csrf().useInvalidToken())
-                        .contentType(MediaType.APPLICATION_JSON).content(JSON))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"POST", "PUT"})
-    @WithMockUser
+    @WithMockUser(roles = "EDITOR")
     void invalidAndProtectedFieldsReturnCommonBadRequestShape(String operation) throws Exception {
         for (String json : java.util.List.of("{}", "{", JSON.replace("2020", "1799"),
                 JSON.replace("2020", "2201"), JSON.replace("100", "-1"),
@@ -78,7 +87,7 @@ class PopulationRecordControllerTest {
                 JSON.replace("}", ",\"createdAt\":\"2020-01-01T00:00:00Z\"}"),
                 JSON.replace("}", ",\"updatedAt\":\"2020-01-01T00:00:00Z\"}"),
                 JSON.replace("}", ",\"unexpected\":true}"))) {
-            mvc.perform(request(method(operation), path(operation)).with(csrf())
+            mvc.perform(request(method(operation), path(operation))
                             .contentType(MediaType.APPLICATION_JSON).content(json))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.status").value(400))
@@ -91,15 +100,102 @@ class PopulationRecordControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"GET_ONE", "PUT", "DELETE"})
-    @WithMockUser
+    @WithMockUser(roles = "ADMIN")
     void malformedPathIdReturnsBadRequest(String operation) throws Exception {
-        mvc.perform(request(method(operation), BASE + "/invalid").with(csrf())
+        mvc.perform(request(method(operation), BASE + "/invalid")
                         .contentType(MediaType.APPLICATION_JSON).content(JSON))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
     }
 
     private String path(String operation) {
         return operation.equals("GET") || operation.equals("POST") ? BASE : BASE + "/1";
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ADMIN", "EDITOR"})
+    void privilegedCrudWorksWithoutCsrf(String role) throws Exception {
+        var user = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("member").roles(role);
+        var record = new com.qaryati.population.entity.PopulationRecord(1L, 2020, null, 100,
+                com.qaryati.population.entity.Methodology.CENSUS, 2L, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(record, "id", 1L);
+        org.mockito.Mockito.when(villages.findById(1L)).thenReturn(java.util.Optional.of(
+                new com.qaryati.village.api.VillageLookupResult(1L, com.qaryati.village.api.VillageLookupStatus.VERIFIED, false)));
+        org.mockito.Mockito.when(sources.existsById(2L)).thenReturn(true);
+        org.mockito.Mockito.when(repository.saveAndFlush(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            var saved = (com.qaryati.population.entity.PopulationRecord) call.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", 1L); return saved;
+        });
+        org.mockito.Mockito.when(repository.findById(1L)).thenReturn(java.util.Optional.of(record));
+        org.mockito.Mockito.when(repository.findByIdForUpdate(1L)).thenReturn(java.util.Optional.of(record));
+        org.mockito.Mockito.when(repository.findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(record)));
+        mvc.perform(post(BASE).with(user).contentType(MediaType.APPLICATION_JSON).content(JSON))
+                .andExpect(status().isCreated()).andExpect(header().string("Location", BASE + "/1"))
+                .andExpect(jsonPath("$.verificationStatus").value("DRAFT"));
+        mvc.perform(get(BASE).with(user)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get(BASE + "/1").with(user)).andExpect(status().isOk());
+        mvc.perform(put(BASE + "/1").with(user).contentType(MediaType.APPLICATION_JSON).content(JSON)).andExpect(status().isOk());
+        mvc.perform(delete(BASE + "/1").with(user)).andExpect(status().isNoContent());
+    }
+
+    @org.junit.jupiter.api.Test
+    void invalidBearerIsUnauthorized() throws Exception {
+        org.mockito.Mockito.when(decoder.decode("invalid")).thenThrow(new org.springframework.security.oauth2.jwt.BadJwtException("private detail"));
+        mvc.perform(get(BASE).header("Authorization", "Bearer invalid")).andExpect(status().isUnauthorized());
+    }
+
+    @org.junit.jupiter.api.Test
+    void bearerUsesDatabaseRolesAndRejectsDisabledUsers() throws Exception {
+        var jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("valid")
+                .header("alg", "HS256").subject("member").build();
+        org.mockito.Mockito.when(decoder.decode("valid")).thenReturn(jwt);
+        org.mockito.Mockito.when(userDetails.loadUserByUsername("member")).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername("member")
+                        .password("unused").roles("VIEWER").build());
+        mvc.perform(get(BASE + "/1").header("Authorization", "Bearer valid")).andExpect(status().isNotFound());
+        mvc.perform(delete(BASE + "/1").header("Authorization", "Bearer valid")).andExpect(status().isForbidden());
+        org.mockito.Mockito.when(userDetails.loadUserByUsername("member")).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername("member")
+                        .password("unused").roles("ADMIN").disabled(true).build());
+        mvc.perform(get(BASE).header("Authorization", "Bearer valid")).andExpect(status().isUnauthorized());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"?page=-1", "?size=0", "?size=101", "?page=abc", "?size=2147483648"})
+    @WithMockUser(roles = "VIEWER")
+    void invalidPaginationIsBadRequest(String query) throws Exception {
+        mvc.perform(get(BASE + query)).andExpect(status().isBadRequest());
+    }
+
+    @org.junit.jupiter.api.Test
+    @WithMockUser(roles = "VIEWER")
+    void viewerPageUsesFilteredQuery() throws Exception {
+        org.mockito.Mockito.when(repository.findByVerificationStatus(
+                org.mockito.ArgumentMatchers.eq(com.qaryati.population.entity.VerificationStatus.VERIFIED),
+                org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+        mvc.perform(get(BASE)).andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @org.junit.jupiter.api.Test
+    @WithMockUser(roles = "ADMIN")
+    void infrastructureFailureDoesNotLeakDetails() throws Exception {
+        org.mockito.Mockito.when(repository.findById(1L)).thenThrow(new org.springframework.dao.DataIntegrityViolationException("secret SQL"));
+        mvc.perform(get(BASE + "/1")).andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("Unexpected error"));
+    }
+
+    @org.junit.jupiter.api.Test
+    @WithMockUser(roles = "ADMIN")
+    void nonDraftDeletionIsConflict() throws Exception {
+        var record = new com.qaryati.population.entity.PopulationRecord(1L, 2020, null, 100,
+                com.qaryati.population.entity.Methodology.CENSUS, 2L, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(record, "verificationStatus",
+                com.qaryati.population.entity.VerificationStatus.VERIFIED);
+        org.mockito.Mockito.when(repository.findByIdForUpdate(1L)).thenReturn(java.util.Optional.of(record));
+        mvc.perform(delete(BASE + "/1")).andExpect(status().isConflict());
     }
 
     private HttpMethod method(String operation) {
