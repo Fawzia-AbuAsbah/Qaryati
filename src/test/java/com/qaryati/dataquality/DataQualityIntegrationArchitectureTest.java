@@ -18,11 +18,15 @@ class DataQualityIntegrationArchitectureTest {
         var module = modules.getModuleByName("dataquality").orElseThrow();
         assertFalse(module.isOpen());
         assertEquals(Set.of(SourceLookup.class.getName(), AuditWriter.class.getName(),
-                        AuditSnapshot.class.getName(), AuditAction.class.getName()),
+                        AuditSnapshot.class.getName(), AuditAction.class.getName(),
+                        EventSourceLinks.class.getName(), HistoricalEventAuditSnapshot.class.getName()),
                 module.getNamedInterfaces().getByName("integration").orElseThrow()
                         .asJavaClasses().map(type -> type.getName()).collect(Collectors.toSet()));
         assertTrue(module.isExposed(SourceLookup.class));
         assertTrue(module.isExposed(AuditWriter.class));
+        assertTrue(module.isExposed(EventSourceLinks.class));
+        assertFalse(module.isExposed(com.qaryati.dataquality.service.EventSourceLinksService.class));
+        assertFalse(module.isExposed(com.qaryati.dataquality.repository.EventSourceLinkRepository.class));
         assertFalse(module.isExposed(SourceLookupService.class));
         assertFalse(module.isExposed(AuditWriterService.class));
     }
