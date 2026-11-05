@@ -60,7 +60,7 @@ class HistoricalEventRepositoryIntegrationTest {
         Integer from = precision == DatePrecision.YEAR || precision == DatePrecision.PERIOD ? 1 : null;
         Integer to = precision == DatePrecision.PERIOD ? 2200 : null;
         var saved = repository.saveAndFlush(HistoricalEvent.draft(new HistoricalEventRequest(
-                village, "x".repeat(250), "Description", date, from, to, precision)));
+                village, "x".repeat(250), "Description", date, from, to, precision, java.util.List.of(2L))));
         Long id = saved.getId();
         assertNotNull(saved.getCreatedAt());
         entityManager.clear();
@@ -73,7 +73,7 @@ class HistoricalEventRepositoryIntegrationTest {
         assertEquals("Description", found.getDescription());
         assertEquals(VerificationStatus.DRAFT, found.getVerificationStatus());
         assertTrue(repository.findByIdAndVillageId(id, otherVillage).isEmpty());
-        found.reviseDraft(new HistoricalEventRequest(village, "Revised", "Changed", null, null, null, DatePrecision.UNKNOWN));
+        found.reviseDraft(new HistoricalEventRequest(village, "Revised", "Changed", null, null, null, DatePrecision.UNKNOWN, java.util.List.of(2L)));
         repository.flush();
         entityManager.clear();
         assertEquals("Revised", repository.findByIdAndVillageId(id, village).orElseThrow().getTitle());
@@ -97,6 +97,24 @@ class HistoricalEventRepositoryIntegrationTest {
         assertEquals(ids, actual);
     }
 
+    @Test void visibilityAndVillageFiltersApplyBeforeCountingAndPaging() {
+        Long draft = repository.saveAndFlush(draft(village)).getId();
+        Long first = insert(village, "Same", "Description", null, null, null, "UNKNOWN", "VERIFIED");
+        Long second = insert(village, "Same", "Description", null, null, null, "UNKNOWN", "VERIFIED");
+        Long elsewhere = insert(otherVillage, "Same", "Description", null, null, null, "UNKNOWN", "VERIFIED");
+        entityManager.clear();
+        var paging = org.springframework.data.domain.PageRequest.of(0, 1, org.springframework.data.domain.Sort.by("id"));
+        var page = repository.findVisiblePage(village, VerificationStatus.VERIFIED, paging);
+        assertEquals(2, page.getTotalElements());
+        assertEquals(List.of(first), page.stream().map(HistoricalEvent::getId).toList());
+        assertEquals(List.of(second), repository.findVisiblePage(village, VerificationStatus.VERIFIED,
+                paging.next()).stream().map(HistoricalEvent::getId).toList());
+        assertEquals(3, repository.findVisiblePage(village, null, paging).getTotalElements());
+        assertTrue(repository.findByIdAndVerificationStatus(draft, VerificationStatus.VERIFIED).isEmpty());
+        assertTrue(repository.findByIdAndVerificationStatus(elsewhere, VerificationStatus.VERIFIED).isPresent());
+        assertEquals(draft, repository.findByIdForUpdate(draft).orElseThrow().getId());
+        // This exercises the lock query, not concurrent lock scheduling.
+    }
     static Stream<Arguments> dateCombinations() { return HistoricalEventTest.dateCombinations(); }
 
     @ParameterizedTest @MethodSource("dateCombinations")
@@ -150,12 +168,12 @@ class HistoricalEventRepositoryIntegrationTest {
         assertEquals(status, event.getVerificationStatus());
         if (status == VerificationStatus.DRAFT) assertDoesNotThrow(event::requireDraftMutation);
         else assertThrows(IllegalStateException.class, () -> event.reviseDraft(new HistoricalEventRequest(
-                village, "Changed", "Description", null, null, null, DatePrecision.UNKNOWN)));
+                village, "Changed", "Description", null, null, null, DatePrecision.UNKNOWN, java.util.List.of(2L))));
     }
 
     private HistoricalEvent draft(Long villageId) {
         return HistoricalEvent.draft(new HistoricalEventRequest(villageId, "Same title", "Description",
-                null, null, null, DatePrecision.UNKNOWN));
+                null, null, null, DatePrecision.UNKNOWN, java.util.List.of(2L)));
     }
     private Long insert(Long villageId, String title, String description, LocalDate date,
             Integer from, Integer to, String precision, String status) {

@@ -8,13 +8,13 @@ import org.springframework.modulith.core.ApplicationModules;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 
 class HeritageArchitectureTest {
-    @Test void heritageProductionCodeHasNoOtherModuleDependencies() {
+    @Test void heritageProductionCodeUsesOnlyPublicModuleApis() {
         var heritage = new ClassFileImporter()
                 .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
                 .importPackages("com.qaryati.heritage");
         classes().that().resideInAPackage("com.qaryati.heritage..")
                 .should().onlyDependOnClassesThat()
-                .resideInAnyPackage("com.qaryati.heritage..", "java..", "jakarta..", "org..")
+                .resideInAnyPackage("com.qaryati.heritage..", "com.qaryati.dataquality.api", "com.qaryati.village.api", "com.qaryati.common.response", "com.fasterxml.jackson.annotation", "java..", "jakarta..", "org..")
                 .check(heritage);
     }
 

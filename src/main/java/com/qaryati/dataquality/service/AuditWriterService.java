@@ -3,6 +3,7 @@ package com.qaryati.dataquality.service;
 import com.qaryati.dataquality.api.AuditAction;
 import com.qaryati.dataquality.api.AuditSnapshot;
 import com.qaryati.dataquality.api.AuditWriter;
+import com.qaryati.dataquality.api.HistoricalEventAuditSnapshot;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
@@ -13,6 +14,33 @@ public class AuditWriterService implements AuditWriter {
     private final AuditLogService auditLogService;
 
     public AuditWriterService(AuditLogService auditLogService) { this.auditLogService = auditLogService; }
+
+    @Override
+    @Transactional
+    public void recordHistoricalEvent(Long eventId, AuditAction action,
+            HistoricalEventAuditSnapshot before, HistoricalEventAuditSnapshot after) {
+        if (action == null || switch (action) {
+            case CREATE -> before != null || after == null;
+            case UPDATE -> before == null || after == null;
+            case DELETE -> before == null || after != null;
+        }) throw new IllegalArgumentException("Invalid event audit before/after state");
+        auditLogService.record("HISTORICAL_EVENT", eventId, action.name(), eventSnapshot(before),
+                eventSnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> eventSnapshot(HistoricalEventAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("title", value.title());
+        if (value.eventDate() != null) data.put("eventDate", value.eventDate().toString());
+        if (value.yearFrom() != null) data.put("yearFrom", value.yearFrom());
+        if (value.yearTo() != null) data.put("yearTo", value.yearTo());
+        data.put("datePrecision", value.datePrecision());
+        data.put("sourceIds", value.sourceIds());
+        if (value.verificationStatus() != null) data.put("verificationStatus", value.verificationStatus());
+        return data;
+    }
 
     @Override
     @Transactional
