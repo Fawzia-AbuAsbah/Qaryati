@@ -81,7 +81,7 @@ class HistoricalEventTest {
 
     @ParameterizedTest @MethodSource("invalidRequiredFields")
     void validatesRequiredFields(Long village, String title, String description, DatePrecision precision) {
-        var request = new HistoricalEventRequest(village, title, description, null, null, null, precision);
+        var request = new HistoricalEventRequest(village, title, description, null, null, null, precision, java.util.List.of(2L));
         assertFalse(validator.validate(request).isEmpty());
         assertThrows(IllegalArgumentException.class, () -> mapper.toEntity(request));
         var entity = mapper.toEntity(request(DatePrecision.UNKNOWN, null, null, null));
@@ -94,7 +94,7 @@ class HistoricalEventTest {
 
     @Test void mapsAllFieldsAndPreservesServerManagedValuesDuringRevision() {
         var request = new HistoricalEventRequest(7L, "x".repeat(250), "Description",
-                null, 1, 2200, DatePrecision.PERIOD);
+                null, 1, 2200, DatePrecision.PERIOD, java.util.List.of(2L));
         var entity = mapper.toEntity(request);
         assertTrue(validator.validate(entity).isEmpty());
         assertNull(entity.getId());
@@ -106,7 +106,7 @@ class HistoricalEventTest {
         assertEquals(new HistoricalEventResponse(42L, 7L, request.title(), "Description", null,
                 1, 2200, DatePrecision.PERIOD, VerificationStatus.DRAFT, created), mapper.toResponse(entity));
         mapper.updateDraft(new HistoricalEventRequest(7L, "Revised", "New description",
-                LocalDate.of(2300, 1, 1), null, null, DatePrecision.EXACT), entity);
+                LocalDate.of(2300, 1, 1), null, null, DatePrecision.EXACT, java.util.List.of(2L)), entity);
         assertEquals("Revised", entity.getTitle());
         assertNull(entity.getYearFrom());
         assertNull(entity.getYearTo());
@@ -131,7 +131,7 @@ class HistoricalEventTest {
         var entity = mapper.toEntity(request(DatePrecision.YEAR, null, 1948, null));
         assertDoesNotThrow(entity::requireDraftMutation);
         assertThrows(IllegalArgumentException.class, () -> entity.reviseDraft(
-                new HistoricalEventRequest(2L, "New", "Description", null, null, null, DatePrecision.UNKNOWN)));
+                new HistoricalEventRequest(2L, "New", "Description", null, null, null, DatePrecision.UNKNOWN, java.util.List.of(2L))));
         assertThrows(IllegalArgumentException.class, () -> entity.reviseDraft(
                 request(DatePrecision.PERIOD, null, 2000, 1900)));
         assertEquals(1948, entity.getYearFrom());
@@ -142,7 +142,7 @@ class HistoricalEventTest {
     }
 
     @Test void requestHasNoServerManagedFieldsOrEntitySetters() {
-        assertEquals(Set.of("villageId", "title", "description", "eventDate", "yearFrom", "yearTo", "datePrecision"),
+        assertEquals(Set.of("villageId", "title", "description", "eventDate", "yearFrom", "yearTo", "datePrecision", "sourceIds"),
                 new HashSet<>(Arrays.stream(HistoricalEventRequest.class.getRecordComponents()).map(c -> c.getName()).toList()));
         assertTrue(Arrays.stream(HistoricalEvent.class.getMethods()).noneMatch(m -> m.getName().startsWith("set")));
         assertEquals(Set.of("DRAFT", "UNDER_REVIEW", "VERIFIED", "REJECTED", "DISPUTED"),
@@ -150,6 +150,6 @@ class HistoricalEventTest {
     }
 
     private static HistoricalEventRequest request(DatePrecision precision, LocalDate date, Integer from, Integer to) {
-        return new HistoricalEventRequest(1L, "Title", "Description", date, from, to, precision);
+        return new HistoricalEventRequest(1L, "Title", "Description", date, from, to, precision, java.util.List.of(2L));
     }
 }
