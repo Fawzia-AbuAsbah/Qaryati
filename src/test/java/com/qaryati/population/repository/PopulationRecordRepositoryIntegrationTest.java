@@ -38,6 +38,27 @@ class PopulationRecordRepositoryIntegrationTest {
     private Long villageId;
     private Long sourceId;
 
+    @Test
+    void verifiedVisibilityIsAppliedBeforePageCountAndStableOrdering() {
+        var draft = repository.saveAndFlush(record(2022, 120));
+        var first = repository.saveAndFlush(record(2020, 100));
+        var second = repository.saveAndFlush(record(2021, 110));
+        jdbc.update("update public.population_records set verification_status='VERIFIED' where id in (?, ?)",
+                first.getId(), second.getId());
+        entityManager.clear();
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 1,
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.desc("referenceYear"),
+                        org.springframework.data.domain.Sort.Order.asc("id")));
+        var page = repository.findByVerificationStatus(VerificationStatus.VERIFIED, pageable);
+        assertEquals(jdbc.queryForObject("select count(*) from public.population_records where verification_status='VERIFIED'", Long.class),
+                page.getTotalElements());
+        assertEquals(jdbc.queryForObject("select id from public.population_records where verification_status='VERIFIED' order by reference_year desc, id asc limit 1", Long.class),
+                page.getContent().getFirst().getId());
+        assertTrue(page.getContent().stream().allMatch(r -> r.getVerificationStatus() == VerificationStatus.VERIFIED));
+        assertTrue(repository.findByIdAndVerificationStatus(draft.getId(), VerificationStatus.VERIFIED).isEmpty());
+        assertTrue(repository.findByIdAndVerificationStatus(first.getId(), VerificationStatus.VERIFIED).isPresent());
+    }
+
     @BeforeEach
     void createIsolatedFixturesAfterCheckingDatabaseIdentity() {
         assertEquals("qaryati_test_db", jdbc.queryForObject("select current_database()", String.class));

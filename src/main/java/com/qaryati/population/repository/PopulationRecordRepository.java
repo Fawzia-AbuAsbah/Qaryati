@@ -7,6 +7,11 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface PopulationRecordRepository extends JpaRepository<PopulationRecord, Long> {
+    org.springframework.data.domain.Page<PopulationRecord> findByVerificationStatus(
+            VerificationStatus status, org.springframework.data.domain.Pageable pageable);
+
+    Optional<PopulationRecord> findByIdAndVerificationStatus(Long id, VerificationStatus status);
+
     boolean existsByVillageIdAndReferenceYearAndMethodologyAndSourceId(
             Long villageId, Integer referenceYear, Methodology methodology, Long sourceId);
 
