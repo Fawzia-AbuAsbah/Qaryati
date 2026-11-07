@@ -20,9 +20,14 @@ class DataQualityIntegrationArchitectureTest {
         assertEquals(Set.of(SourceLookup.class.getName(), AuditWriter.class.getName(),
                         AuditSnapshot.class.getName(), AuditAction.class.getName(),
                         EventSourceLinks.class.getName(), HistoricalEventAuditSnapshot.class.getName(),
-                        VillageHistorySourceLinks.class.getName(), VillageHistoryAuditSnapshot.class.getName()),
+                        VillageHistorySourceLinks.class.getName(), VillageHistoryAuditSnapshot.class.getName(),
+                        CulturalHeritageSourceLinks.class.getName(), CulturalHeritageAuditSnapshot.class.getName()),
                 module.getNamedInterfaces().getByName("integration").orElseThrow()
                         .asJavaClasses().map(type -> type.getName()).collect(Collectors.toSet()));
+        assertTrue(module.isExposed(CulturalHeritageSourceLinks.class));
+        assertTrue(module.isExposed(CulturalHeritageAuditSnapshot.class));
+        assertFalse(module.isExposed(com.qaryati.dataquality.service.CulturalHeritageSourceLinksService.class));
+        assertFalse(module.isExposed(com.qaryati.dataquality.repository.CulturalHeritageSourceLinkRepository.class));
         assertTrue(module.isExposed(SourceLookup.class));
         assertTrue(module.isExposed(AuditWriter.class));
         assertTrue(module.isExposed(EventSourceLinks.class));

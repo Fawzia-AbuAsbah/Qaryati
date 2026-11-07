@@ -12,6 +12,30 @@ import java.util.Map;
 @Service
 public class AuditWriterService implements AuditWriter {
     @Override @Transactional
+    public void recordCulturalHeritage(Long culturalHeritageId, AuditAction action,
+            com.qaryati.dataquality.api.CulturalHeritageAuditSnapshot before,
+            com.qaryati.dataquality.api.CulturalHeritageAuditSnapshot after) {
+        if (action == null || switch (action) {
+            case CREATE -> before != null || after == null;
+            case UPDATE -> before == null || after == null;
+            case DELETE -> before == null || after != null;
+        }) throw new IllegalArgumentException("Invalid cultural heritage audit state");
+        auditLogService.record("CULTURAL_HERITAGE", culturalHeritageId, action.name(), culturalSnapshot(before),
+                culturalSnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> culturalSnapshot(com.qaryati.dataquality.api.CulturalHeritageAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("name", value.name());
+        data.put("heritageType", value.heritageType());
+        data.put("description", value.description());
+        data.put("sourceIds", value.sourceIds());
+        data.put("verificationStatus", value.verificationStatus());
+        return data;
+    }
+    @Override @Transactional
     public void recordVillageHistory(Long historyId, AuditAction action,
             com.qaryati.dataquality.api.VillageHistoryAuditSnapshot before,
             com.qaryati.dataquality.api.VillageHistoryAuditSnapshot after) {
