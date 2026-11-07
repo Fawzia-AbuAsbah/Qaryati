@@ -1,6 +1,7 @@
 package com.qaryati.dataquality.service;
 
 import com.qaryati.dataquality.api.AuditAction;
+import com.qaryati.dataquality.api.HeritageSiteAuditSnapshot;
 import com.qaryati.dataquality.api.AuditSnapshot;
 import com.qaryati.dataquality.api.AuditWriter;
 import com.qaryati.dataquality.api.HistoricalEventAuditSnapshot;
@@ -14,6 +15,33 @@ public class AuditWriterService implements AuditWriter {
     private final AuditLogService auditLogService;
 
     public AuditWriterService(AuditLogService auditLogService) { this.auditLogService = auditLogService; }
+
+    @Override @Transactional
+    public void recordHeritageSite(Long siteId, AuditAction action,
+            HeritageSiteAuditSnapshot before, HeritageSiteAuditSnapshot after) {
+        if (action == null || switch (action) {
+            case CREATE -> before != null || after == null;
+            case UPDATE -> before == null || after == null;
+            case DELETE -> before == null || after != null;
+        }) throw new IllegalArgumentException("Invalid site audit before/after state");
+        auditLogService.record("HERITAGE_SITE", siteId, action.name(), siteSnapshot(before),
+                siteSnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> siteSnapshot(HeritageSiteAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("name", value.name());
+        data.put("siteType", value.siteType());
+        if (value.description() != null) data.put("description", value.description());
+        if (value.latitude() != null) data.put("latitude", value.latitude());
+        if (value.longitude() != null) data.put("longitude", value.longitude());
+        if (value.conditionNotes() != null) data.put("conditionNotes", value.conditionNotes());
+        data.put("sourceIds", value.sourceIds());
+        data.put("verificationStatus", value.verificationStatus());
+        return data;
+    }
 
     @Override
     @Transactional
