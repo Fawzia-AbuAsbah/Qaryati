@@ -59,7 +59,7 @@ class HeritageSiteTest {
     }
     @ParameterizedTest @MethodSource("requiredFields")
     void rejectsInvalidRequiredFields(Long village, String name, HeritageSiteType type) {
-        var request = new HeritageSiteRequest(village, name, type, null, null, null, null);
+        var request = new HeritageSiteRequest(village, name, type, null, null, null, null, java.util.List.of(2L));
         assertFalse(validator.validate(request).isEmpty());
         assertThrows(IllegalArgumentException.class, () -> mapper.toEntity(request));
         var site = mapper.toEntity(request(null, null));
@@ -72,7 +72,7 @@ class HeritageSiteTest {
     @ParameterizedTest @EnumSource(HeritageSiteType.class)
     void acceptsEveryTypeAndSchemaNullableFields(HeritageSiteType type) {
         for (String name : List.of("", " ", "x".repeat(250))) {
-            var request = new HeritageSiteRequest(0L, name, type, null, null, null, null);
+            var request = new HeritageSiteRequest(1L, name, type, null, null, null, null, java.util.List.of(2L));
             assertTrue(validator.validate(request).isEmpty());
             assertTrue(validator.validate(mapper.toEntity(request)).isEmpty());
         }
@@ -80,14 +80,14 @@ class HeritageSiteTest {
 
     @Test void mapsAllFieldsAndPreservesManagedFields() {
         var request = new HeritageSiteRequest(1L, "Name", HeritageSiteType.SPRING,
-                "Description", decimal("32.123456"), decimal("35.123456"), "Notes");
+                "Description", decimal("32.123456"), decimal("35.123456"), "Notes", java.util.List.of(2L));
         var site = mapper.toEntity(request);
         assertNull(site.getId());
         assertEquals(VerificationStatus.DRAFT, site.getVerificationStatus());
         ReflectionTestUtils.setField(site, "id", 42L);
         assertEquals(new HeritageSiteResponse(42L, 1L, request.name(), request.siteType(),
                 request.description(), request.latitude(), request.longitude(), request.conditionNotes(),
-                VerificationStatus.DRAFT), mapper.toResponse(site));
+                VerificationStatus.DRAFT, List.of(2L)), mapper.toResponse(site, List.of(2L)));
         mapper.updateDraft(request(null, null), site);
         assertEquals(42L, site.getId());
         assertEquals(1L, site.getVillageId());
@@ -104,21 +104,21 @@ class HeritageSiteTest {
         var site = mapper.toEntity(request(null, null));
         ReflectionTestUtils.setField(site, "verificationStatus", status);
         assertTrue(validator.validate(site).isEmpty());
-        assertEquals(status, mapper.toResponse(site).verificationStatus());
+        assertEquals(status, mapper.toResponse(site, List.of(2L)).verificationStatus());
         assertThrows(IllegalStateException.class, site::requireDraftMutation);
         assertThrows(IllegalStateException.class, () -> mapper.updateDraft(request(null, null), site));
     }
 
     @Test void rejectsInvalidRevisionsAtomicallyAndVillageReassignment() {
         var site = mapper.toEntity(request(decimal("30"), decimal("35")));
-        var before = mapper.toResponse(site);
+        var before = mapper.toResponse(site, List.of(2L));
         assertDoesNotThrow(site::requireDraftMutation);
         assertThrows(IllegalArgumentException.class, () -> site.reviseDraft(request(decimal("91"), decimal("35"))));
         assertThrows(IllegalArgumentException.class, () -> site.reviseDraft(
-                new HeritageSiteRequest(2L, "Changed", HeritageSiteType.OTHER, null, null, null, null)));
+                new HeritageSiteRequest(2L, "Changed", HeritageSiteType.OTHER, null, null, null, null, java.util.List.of(2L))));
         assertThrows(IllegalArgumentException.class, () -> site.reviseDraft(null));
         assertThrows(IllegalArgumentException.class, () -> HeritageSite.draft(null));
-        assertEquals(before, mapper.toResponse(site));
+        assertEquals(before, mapper.toResponse(site, List.of(2L)));
         ReflectionTestUtils.setField(site, "verificationStatus", null);
         assertFalse(validator.validate(site).isEmpty());
         assertThrows(IllegalStateException.class, site::requireDraftMutation);
@@ -128,13 +128,13 @@ class HeritageSiteTest {
         assertEquals(Set.of("ARCHAEOLOGICAL", "TRADITIONAL_BUILDING", "SPRING", "RELIGIOUS", "VIEWPOINT", "OTHER"),
                 new HashSet<>(Arrays.stream(HeritageSiteType.values()).map(Enum::name).toList()));
         assertThrows(IllegalArgumentException.class, () -> HeritageSiteType.valueOf("INVALID"));
-        assertEquals(Set.of("villageId", "name", "siteType", "description", "latitude", "longitude", "conditionNotes"),
+        assertEquals(Set.of("villageId", "name", "siteType", "description", "latitude", "longitude", "conditionNotes", "sourceIds"),
                 new HashSet<>(Arrays.stream(HeritageSiteRequest.class.getRecordComponents()).map(c -> c.getName()).toList()));
         assertTrue(Arrays.stream(HeritageSite.class.getMethods()).noneMatch(m -> m.getName().startsWith("set")));
     }
 
     static BigDecimal decimal(String value) { return value == null ? null : new BigDecimal(value); }
     static HeritageSiteRequest request(BigDecimal latitude, BigDecimal longitude) {
-        return new HeritageSiteRequest(1L, "Name", HeritageSiteType.OTHER, null, latitude, longitude, null);
+        return new HeritageSiteRequest(1L, "Name", HeritageSiteType.OTHER, null, latitude, longitude, null, java.util.List.of(2L));
     }
 }

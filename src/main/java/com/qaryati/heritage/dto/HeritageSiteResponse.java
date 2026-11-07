@@ -5,4 +5,6 @@ import java.math.BigDecimal;
 
 public record HeritageSiteResponse(Long id, Long villageId, String name, HeritageSiteType siteType,
         String description, BigDecimal latitude, BigDecimal longitude, String conditionNotes,
-        VerificationStatus verificationStatus) {}
+        VerificationStatus verificationStatus, java.util.List<Long> sourceIds) {
+    public HeritageSiteResponse { sourceIds = java.util.List.copyOf(sourceIds); }
+}

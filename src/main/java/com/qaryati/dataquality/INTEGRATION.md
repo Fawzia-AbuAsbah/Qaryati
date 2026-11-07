@@ -1,5 +1,67 @@
 # Historical Event source and audit integration
 
+## Heritage Site integration
+
+The same `integration` named interface now exports `HeritageSiteSourceLinks` and
+`HeritageSiteAuditSnapshot`; no Heritage internals are imported or exposed.
+
+```java
+List<Long> HeritageSiteSourceLinks.sourceIds(Long heritageSiteId);
+Map<Long, List<Long>> HeritageSiteSourceLinks.sourceIdsBySiteIds(Collection<Long> siteIds);
+void HeritageSiteSourceLinks.linkNewSite(Long heritageSiteId, Collection<Long> sourceIds);
+void HeritageSiteSourceLinks.replaceSources(Long heritageSiteId, Collection<Long> sourceIds);
+void AuditWriter.recordHeritageSite(Long siteId, AuditAction action,
+    HeritageSiteAuditSnapshot before, HeritageSiteAuditSnapshot after);
+```
+
+Site links use the existing `heritage_site_sources` table. The exception, transaction,
+flush, authorization and DRAFT-check obligations described below for events also
+apply to sites. Null/nonpositive IDs and null/empty write collections throw
+`IllegalArgumentException`; missing sites/sources throw `NoSuchElementException`.
+Relinking a site with existing links throws `IllegalStateException`. All sources
+are checked through `SourceLookup` before deleting any association. Invalid IDs are
+never silently discarded. Source existence implies neither credibility nor verification.
+Parent deletion cascades links; source deletion is restricted by the existing FK.
+
+Batch reads validate and deduplicate site IDs, then use one SQL LEFT JOIN, including
+sites with no links. Any missing site fails the whole call. Empty input needs no SQL;
+null input is invalid. Results are immutable maps in ascending site order with immutable,
+sorted distinct source lists. No entities, repositories or cache cross the boundary.
+
+The snapshot fields are `Long villageId`, `String name`, validated enum-name strings
+`siteType` and `verificationStatus`, `String description`, `BigDecimal latitude`,
+`BigDecimal longitude`, `String conditionNotes`, and `List<Long> sourceIds`.
+Enum-name strings follow Historical Events conventions without importing Heritage enums.
+Coordinates follow the model's paired, bounded six-decimal representation. Source lists
+are copied, sorted and deduplicated; empty snapshots can represent existing unlinked sites.
+Optional null fields are omitted from JSON. Description and condition notes are explicitly
+allowlisted here; callers must not put credentials or secrets in these fields.
+
+Audits use `HERITAGE_SITE`, existing actor lookup, database-generated timestamp and
+JSON infrastructure. CREATE requires after only, UPDATE both, DELETE before only.
+Capture a complete old snapshot and sources before replacement/deletion. All writes
+use REQUIRED and join the caller's transaction; failures propagate. Standalone calls
+start a transaction, so the owning service must group mutation, links and audit together.
+This integration supplies no CRUD, approval or status-transition endpoints.
+
+Source writes acquire `SELECT ... FOR UPDATE` on the site row before checking/changing
+links and retain it until the caller transaction ends. This serializes cooperating
+link writers; it does not coordinate earlier domain reads or prevent direct SQL bypasses.
+Heritage must coordinate authorization and DRAFT checks with concurrent domain changes.
+Single-site reads retain the event contract's separate existence/read observation limit;
+batch reads use one statement snapshot. Concurrent source deletion can still cause an FK
+exception after the existence check, and that failure must roll back the caller.
+
+`HeritageSiteSourceLinksPostgresIntegrationTest` is guarded by
+`QARYATI_SITE_LINK_TESTS=verified-test-db`, the test profile, exact localhost dedicated
+database URL and live identity verification, following the event guard. It disables
+DDL/migrations and rolls back fixtures. It covers persistence/replacement, batch SQL,
+FK constraints/cascade/restrict, a parent-lock observation and rollback after linking
+or real audit authentication failure. It has **not been executed**. The lock observation
+checks PostgreSQL's parent relation lock; competing replacements, row-lock waiting,
+deadlocks and end-to-end concurrent CRUD remain unverified. No database-level concurrency
+claim follows from the database-free tests.
+
 Public types are in `com.qaryati.dataquality.api`, named interface `integration`.
 Implementations and persistence remain internal. No schema/migration changes.
 

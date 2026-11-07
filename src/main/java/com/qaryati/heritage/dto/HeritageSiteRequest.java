@@ -7,13 +7,18 @@ import java.math.BigDecimal;
 
 @ValidCoordinatePair
 public record HeritageSiteRequest(
-        @NotNull Long villageId,
+        @NotNull @Positive Long villageId,
         @NotNull @Size(max = 250) String name,
         @NotNull HeritageSiteType siteType,
         String description,
         @DecimalMin("-90") @DecimalMax("90") @Digits(integer = 3, fraction = 6) BigDecimal latitude,
         @DecimalMin("-180") @DecimalMax("180") @Digits(integer = 3, fraction = 6) BigDecimal longitude,
-        String conditionNotes) implements CoordinateFields {
+        String conditionNotes,
+        @NotEmpty java.util.List<@NotNull @Positive Long> sourceIds) implements CoordinateFields {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    public void rejectUnknownField(String name, Object value) {
+        throw new IllegalArgumentException("Unsupported request field");
+    }
     public BigDecimal getLatitude() { return latitude; }
     public BigDecimal getLongitude() { return longitude; }
 }
