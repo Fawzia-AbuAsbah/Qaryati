@@ -44,14 +44,14 @@ class HeritageSiteRepositoryIntegrationTest {
     }
     private HeritageSite draft(Long villageId) {
         return HeritageSite.draft(new HeritageSiteRequest(villageId, "Same name",
-                HeritageSiteType.OTHER, null, null, null, null));
+                HeritageSiteType.OTHER, null, null, null, null, java.util.List.of(2L)));
     }
 
     @ParameterizedTest @EnumSource(HeritageSiteType.class)
     void roundTripsAllFieldsAndRevisesDraft(HeritageSiteType type) {
         var saved = repository.saveAndFlush(HeritageSite.draft(new HeritageSiteRequest(village,
                 "x".repeat(250), type, "Description", new BigDecimal("-90.000000"),
-                new BigDecimal("180.000000"), "Notes")));
+                new BigDecimal("180.000000"), "Notes", java.util.List.of(2L))));
         Long id = saved.getId();
         entityManager.clear();
         var found = repository.findByIdAndVillageId(id, village).orElseThrow();
@@ -64,7 +64,7 @@ class HeritageSiteRepositoryIntegrationTest {
         assertEquals(VerificationStatus.DRAFT, found.getVerificationStatus());
         assertTrue(repository.findByIdAndVillageId(id, otherVillage).isEmpty());
         found.reviseDraft(new HeritageSiteRequest(village, "Revised", HeritageSiteType.OTHER,
-                null, null, null, null));
+                null, null, null, null, java.util.List.of(2L)));
         repository.flush();
         entityManager.clear();
         found = repository.findByIdAndVillageId(id, village).orElseThrow();
@@ -161,7 +161,7 @@ class HeritageSiteRepositoryIntegrationTest {
         assertEquals(status, site.getVerificationStatus());
         if (status == VerificationStatus.DRAFT) assertDoesNotThrow(site::requireDraftMutation);
         else assertThrows(IllegalStateException.class, () -> site.reviseDraft(
-                new HeritageSiteRequest(village, "Changed", HeritageSiteType.OTHER, null, null, null, null)));
+                new HeritageSiteRequest(village, "Changed", HeritageSiteType.OTHER, null, null, null, null, java.util.List.of(2L))));
     }
     private Long insert(Long villageId, String name, String type, BigDecimal lat, BigDecimal lon, String status) {
         return jdbc.queryForObject("""
