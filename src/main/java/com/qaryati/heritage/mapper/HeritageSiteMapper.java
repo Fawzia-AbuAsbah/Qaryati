@@ -8,9 +8,9 @@ import org.springframework.stereotype.Component;
 public class HeritageSiteMapper {
     public HeritageSite toEntity(HeritageSiteRequest request) { return HeritageSite.draft(request); }
     public void updateDraft(HeritageSiteRequest request, HeritageSite site) { site.reviseDraft(request); }
-    public HeritageSiteResponse toResponse(HeritageSite site) {
+    public HeritageSiteResponse toResponse(HeritageSite site, java.util.List<Long> sourceIds) {
         return new HeritageSiteResponse(site.getId(), site.getVillageId(), site.getName(), site.getSiteType(),
                 site.getDescription(), site.getLatitude(), site.getLongitude(), site.getConditionNotes(),
-                site.getVerificationStatus());
+                site.getVerificationStatus(), sourceIds);
     }
 }
