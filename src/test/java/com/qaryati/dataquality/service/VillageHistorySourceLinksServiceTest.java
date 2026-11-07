@@ -1,0 +1,112 @@
+package com.qaryati.dataquality.service;
+
+import com.qaryati.dataquality.api.*;
+import com.qaryati.dataquality.repository.VillageHistorySourceLinkRepository;
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.*;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class VillageHistorySourceLinksServiceTest {
+    final VillageHistorySourceLinkRepository repository = mock(VillageHistorySourceLinkRepository.class);
+    final SourceLookup sources = mock(SourceLookup.class);
+    final VillageHistorySourceLinksService service = new VillageHistorySourceLinksService(repository, sources);
+
+    @Test void batchReadDetectsMissingAndIncludesEmptyLegacyAssociations() {
+        when(repository.sourceIdsByHistoryIds(any())).thenReturn(Map.of(1L, List.of(3L, 2L, 3L), 2L, List.of()));
+        assertEquals(Map.of(1L, List.of(2L, 3L), 2L, List.of()), service.sourceIdsByHistoryIds(List.of(2L, 1L, 1L)));
+        verify(repository).sourceIdsByHistoryIds(new TreeSet<>(List.of(1L, 2L)));
+        verify(repository, never()).historyExists(any(), anyBoolean());
+        assertThrows(NoSuchElementException.class, () -> service.sourceIdsByHistoryIds(List.of(3L)));
+        assertEquals(Map.of(), service.sourceIdsByHistoryIds(List.of()));
+        assertThrows(IllegalArgumentException.class, () -> service.sourceIdsByHistoryIds(null));
+        assertThrows(IllegalArgumentException.class, () -> service.sourceIdsByHistoryIds(List.of(0L)));
+    }
+    @Test void validatesAllIdsAndEmptyCollections() {
+        for (Long id : Arrays.asList(null, 0L, -1L)) {
+            assertThrows(IllegalArgumentException.class, () -> service.sourceIds(id));
+            assertThrows(IllegalArgumentException.class, () -> service.replaceSources(1L, Arrays.asList(id)));
+        }
+        assertThrows(IllegalArgumentException.class, () -> service.linkNewHistory(1L, List.of()));
+        assertThrows(IllegalArgumentException.class, () -> service.replaceSources(1L, null));
+        verifyNoInteractions(repository, sources);
+    }
+    @Test void missingEventsFailForEveryOperation() {
+        assertThrows(NoSuchElementException.class, () -> service.sourceIds(1L));
+        assertThrows(NoSuchElementException.class, () -> service.linkNewHistory(1L, List.of(2L)));
+        assertThrows(NoSuchElementException.class, () -> service.replaceSources(1L, List.of(2L)));
+        verify(repository, never()).deleteLinks(any());
+        verifyNoInteractions(sources);
+    }
+    @Test void missingSourceFailsBeforeDeletingExistingLinks() {
+        when(repository.historyExists(1L, true)).thenReturn(true);
+        doThrow(new NoSuchElementException()).when(sources).requireExists(2L);
+        assertThrows(NoSuchElementException.class, () -> service.replaceSources(1L, List.of(2L)));
+        verify(repository, never()).deleteLinks(any());
+        verify(repository, never()).insert(any(), any());
+    }
+    @Test void replacesSortedDistinctSourcesUnderEventLock() {
+        when(repository.historyExists(1L, true)).thenReturn(true);
+        service.replaceSources(1L, List.of(3L, 2L, 3L));
+        var order = inOrder(repository, sources);
+        order.verify(repository).historyExists(1L, true);
+        order.verify(sources).requireExists(2L);
+        order.verify(sources).requireExists(3L);
+        order.verify(repository).deleteLinks(1L);
+        order.verify(repository).insert(1L, 2L);
+        order.verify(repository).insert(1L, 3L);
+        order.verifyNoMoreInteractions();
+    }
+    @Test void readsImmutableOrderedIdsAndRejectsRelinking() {
+        when(repository.historyExists(1L, false)).thenReturn(true);
+        when(repository.historyExists(1L, true)).thenReturn(true);
+        when(repository.sourceIds(1L)).thenReturn(List.of(2L, 3L));
+        assertEquals(List.of(2L, 3L), service.sourceIds(1L));
+        assertThrows(UnsupportedOperationException.class, () -> service.sourceIds(1L).add(4L));
+        assertThrows(IllegalStateException.class, () -> service.linkNewHistory(1L, List.of(4L)));
+        verifyNoInteractions(sources);
+    }
+    @Test void newLinksCollapseDuplicates() {
+        when(repository.historyExists(1L, true)).thenReturn(true);
+        when(repository.sourceIds(1L)).thenReturn(List.of());
+        service.linkNewHistory(1L, List.of(2L, 2L));
+        verify(repository).insert(1L, 2L);
+        verify(repository, never()).deleteLinks(any());
+    }
+    @Configuration @EnableTransactionManagement(proxyTargetClass = true)
+    static class Config {
+        @Bean VillageHistorySourceLinkRepository repository() { return mock(VillageHistorySourceLinkRepository.class); }
+        @Bean SourceLookup sources() { return mock(SourceLookup.class); }
+        @Bean VillageHistorySourceLinksService service(VillageHistorySourceLinkRepository repository, SourceLookup sources) {
+            return new VillageHistorySourceLinksService(repository, sources);
+        }
+        @Bean AuditWriterServiceTest.TestTransactions transactionManager() {
+            return new AuditWriterServiceTest.TestTransactions();
+        }
+    }
+    @Test void joinsCallerAndPersistenceFailureRollsBack() {
+        for (boolean fail : List.of(false, true)) {
+            try (var context = new AnnotationConfigApplicationContext(Config.class)) {
+                var repo = context.getBean(VillageHistorySourceLinkRepository.class);
+                when(repo.historyExists(1L, true)).thenReturn(true);
+                var tx = context.getBean(AuditWriterServiceTest.TestTransactions.class);
+                doAnswer(call -> {
+                    assertTrue(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+                    assertEquals(1, tx.begins);
+                    assertEquals(0, tx.commits);
+                    if (fail) throw new IllegalStateException("insert failed");
+                    return null;
+                }).when(repo).insert(1L, 2L);
+                Runnable mutation = () -> new TransactionTemplate(tx).executeWithoutResult(status ->
+                        context.getBean(VillageHistorySourceLinks.class).replaceSources(1L, List.of(2L)));
+                if (fail) assertThrows(IllegalStateException.class, mutation::run);
+                else mutation.run();
+                assertEquals(fail ? 1 : 0, tx.rollbacks);
+                assertEquals(fail ? 0 : 1, tx.commits);
+            }
+        }
+    }
+}

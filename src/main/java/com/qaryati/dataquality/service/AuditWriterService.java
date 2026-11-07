@@ -11,6 +11,28 @@ import java.util.Map;
 
 @Service
 public class AuditWriterService implements AuditWriter {
+    @Override @Transactional
+    public void recordVillageHistory(Long historyId, AuditAction action,
+            com.qaryati.dataquality.api.VillageHistoryAuditSnapshot before,
+            com.qaryati.dataquality.api.VillageHistoryAuditSnapshot after) {
+        if (action == null || switch (action) {
+            case CREATE -> before != null || after == null;
+            case UPDATE -> before == null || after == null;
+            case DELETE -> before == null || after != null;
+        }) throw new IllegalArgumentException("Invalid history audit state");
+        auditLogService.record("VILLAGE_HISTORY", historyId, action.name(), historySnapshot(before),
+                historySnapshot(after), "Domain record " + action.name());
+    }
+    private Map<String, Object> historySnapshot(com.qaryati.dataquality.api.VillageHistoryAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("overview", value.overview());
+        data.put("sourceIds", value.sourceIds());
+        data.put("verificationStatus", value.verificationStatus());
+        return data;
+    }
+
     private final AuditLogService auditLogService;
 
     public AuditWriterService(AuditLogService auditLogService) { this.auditLogService = auditLogService; }
