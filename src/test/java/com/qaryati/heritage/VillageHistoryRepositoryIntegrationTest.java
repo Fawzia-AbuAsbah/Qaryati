@@ -18,10 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Requires independent dedicated database verification; never part of the database-free selection. */
-@SpringBootTest(classes = HistoricalEventRepositoryIntegrationTest.PersistenceConfiguration.class,
+@SpringBootTest(classes = OverviewHeritageRepositoryTestConfig.class,
         properties = {"spring.flyway.clean-disabled=true", "spring.jpa.hibernate.ddl-auto=validate"})
 @ActiveProfiles("test")
-@ContextConfiguration(initializers = HistoricalEventRepositoryIntegrationTest.DatabaseGuard.class)
+@ContextConfiguration(initializers = OverviewHeritageRepositoryTestConfig.Guard.class)
+@org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "qaryati.heritage-tests.database-verified", matches = "true")
 @Transactional
 class VillageHistoryRepositoryIntegrationTest {
     @Autowired VillageHistoryRepository repository;
@@ -86,7 +87,7 @@ class VillageHistoryRepositoryIntegrationTest {
         assertState("23514", () -> insert(village, "Overview", "INVALID"));
     }
     @Test void databaseRejectsMissingVillage() {
-        Long absent = jdbc.queryForObject("SELECT COALESCE(MAX(id),0)+1 FROM public.villages", Long.class);
+        Long absent = MissingFixtureId.in(jdbc, "villages");
         assertState("23503", () -> insert(absent, "Overview", "DRAFT"));
     }
     @Test void databaseRestrictsVillageDeletion() {
@@ -142,12 +143,12 @@ class VillageHistoryRepositoryIntegrationTest {
     }
     @Test void sourceLinksRequireExistingSource() {
         Long history = insert(village, "Overview", "DRAFT");
-        Long absent = jdbc.queryForObject("SELECT COALESCE(MAX(id),0)+1 FROM public.sources", Long.class);
+        Long absent = MissingFixtureId.in(jdbc, "sources");
         assertState("23503", () -> link(history, absent));
     }
     @Test void sourceLinksRequireExistingHistory() {
         Long source = source();
-        Long absent = jdbc.queryForObject("SELECT COALESCE(MAX(id),0)+1 FROM public.village_histories", Long.class);
+        Long absent = MissingFixtureId.in(jdbc, "village_histories");
         assertState("23503", () -> link(absent, source));
     }
     private Long source() {

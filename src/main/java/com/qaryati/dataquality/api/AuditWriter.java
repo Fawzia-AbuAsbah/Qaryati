@@ -2,6 +2,12 @@ package com.qaryati.dataquality.api;
 
 /** Synchronous audit append using the current authenticated, enabled database user. */
 public interface AuditWriter {
+    /** REQUIRED; complete exact text snapshots, CREATE after only, UPDATE both, DELETE before only. */
+    void recordCulturalHeritage(Long culturalHeritageId, AuditAction action,
+            CulturalHeritageAuditSnapshot before, CulturalHeritageAuditSnapshot after);
+    /** REQUIRED, atomic with caller mutation; CREATE after only, UPDATE both, DELETE before only. */
+    void recordVillageHistory(Long historyId, AuditAction action,
+            VillageHistoryAuditSnapshot before, VillageHistoryAuditSnapshot after);
     /** REQUIRED; CREATE requires after only, UPDATE both, DELETE before only. */
     void recordHeritageSite(Long siteId, AuditAction action,
             HeritageSiteAuditSnapshot before, HeritageSiteAuditSnapshot after);
