@@ -147,9 +147,21 @@ public class VerificationRecordService {
             String entityType,
             Long entityId
     ) {
+        if (entityType == null || entityType.isBlank() || entityType.length() > 80) {
+            throw new IllegalArgumentException("Invalid entity type");
+        }
+        String normalizedEntityType = entityType.trim();
+        if (entityId == null || entityId <= 0) {
+            throw new IllegalArgumentException("Entity ID must be positive");
+        }
+        if (!"VILLAGE".equals(normalizedEntityType)) {
+            throw new IllegalArgumentException(
+                    "Unsupported entity type. Currently only VILLAGE is supported"
+            );
+        }
         return verificationRepository
                 .findByEntityTypeAndEntityIdOrderByReviewedAtDesc(
-                        entityType,
+                        normalizedEntityType,
                         entityId
                 )
                 .stream()

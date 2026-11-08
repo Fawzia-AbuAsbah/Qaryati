@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -115,9 +116,8 @@ class VillageSourceServiceTest {
         when(sourceRepository.existsById(5L))
                 .thenReturn(true);
 
-        when(villageSourceRepository.saveAndFlush(
-                any(VillageSource.class)
-        )).thenAnswer(invocation -> invocation.getArgument(0));
+        when(villageSourceRepository.insertIfAbsent(1L, 5L, "Population data"))
+                .thenReturn(1);
 
         VillageSource result =
                 service.linkSourceToVillage(
@@ -131,7 +131,8 @@ class VillageSourceServiceTest {
         assertEquals("Population data", result.getClaimNote());
 
         verify(villageSourceRepository)
-                .saveAndFlush(any(VillageSource.class));
+                .insertIfAbsent(1L, 5L, "Population data");
+        verify(villageSourceRepository, never()).saveAndFlush(any());
 
         verify(auditLogService).record(
                 eq("VILLAGE_SOURCE"),
@@ -158,7 +159,7 @@ class VillageSourceServiceTest {
         );
 
         verify(villageSourceRepository, never())
-                .saveAndFlush(any(VillageSource.class));
+                .insertIfAbsent(any(), any(), any());
 
         verifyNoInteractions(auditLogService);
     }
@@ -178,7 +179,7 @@ class VillageSourceServiceTest {
         );
 
         verify(villageSourceRepository, never())
-                .saveAndFlush(any(VillageSource.class));
+                .insertIfAbsent(any(), any(), any());
 
         verifyNoInteractions(auditLogService);
     }
@@ -202,9 +203,77 @@ class VillageSourceServiceTest {
         );
 
         verify(villageSourceRepository, never())
-                .saveAndFlush(any(VillageSource.class));
+                .insertIfAbsent(any(), any(), any());
 
         verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void rejectsDuplicateWhenAdvisoryPrecheckMissesCompetingInsert() {
+        when(villageExistsRepository.existsById(1L)).thenReturn(true);
+        when(sourceRepository.existsById(5L)).thenReturn(true);
+        when(villageSourceRepository.insertIfAbsent(1L, 5L, "Competing note")).thenReturn(0);
+
+        var failure = assertThrows(IllegalStateException.class,
+                () -> service.linkSourceToVillage(1L, 5L, "Competing note"));
+
+        assertEquals("Source is already linked to this village", failure.getMessage());
+        verify(villageSourceRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void unrelatedIntegrityFailurePropagatesWithoutAuditOrDuplicateTranslation() {
+        when(villageExistsRepository.existsById(1L)).thenReturn(true);
+        when(sourceRepository.existsById(5L)).thenReturn(true);
+        var failure = new org.springframework.dao.DataIntegrityViolationException("simulated FK failure");
+        when(villageSourceRepository.insertIfAbsent(1L, 5L, null)).thenThrow(failure);
+
+        assertSame(failure, assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> service.linkSourceToVillage(1L, 5L, null)));
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void concurrentCallsWithStalePrechecksKeepOnlyWinningNoteAndAudit() throws Exception {
+        when(villageExistsRepository.existsById(1L)).thenReturn(true);
+        when(sourceRepository.existsById(5L)).thenReturn(true);
+        var bothPrechecks = new CyclicBarrier(2);
+        when(villageSourceRepository.existsById(new VillageSourceId(1L, 5L))).thenAnswer(call -> {
+            bothPrechecks.await(5, TimeUnit.SECONDS);
+            return false;
+        });
+        // Models atomic insert-if-absent, not PostgreSQL execution or transaction behavior.
+        var stored = new ConcurrentHashMap<VillageSourceId, VillageSource>();
+        when(villageSourceRepository.insertIfAbsent(eq(1L), eq(5L), anyString())).thenAnswer(call -> {
+            var candidate = new VillageSource(1L, 5L, call.getArgument(2));
+            return stored.putIfAbsent(candidate.getId(), candidate) == null ? 1 : 0;
+        });
+        java.util.function.Function<String, Object> attempt = note -> {
+            try { return service.linkSourceToVillage(1L, 5L, note); }
+            catch (IllegalStateException duplicate) { return duplicate; }
+        };
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var first = pool.submit(() -> attempt.apply("  First citation\noriginal note  "));
+            var second = pool.submit(() -> attempt.apply("Second citation note"));
+            var results = List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
+            var winners = results.stream().filter(VillageSource.class::isInstance).map(VillageSource.class::cast).toList();
+            var duplicates = results.stream().filter(IllegalStateException.class::isInstance)
+                    .map(IllegalStateException.class::cast).toList();
+            assertEquals(1, winners.size());
+            assertEquals(1, duplicates.size());
+            assertEquals("Source is already linked to this village", duplicates.getFirst().getMessage());
+            assertEquals(1, stored.size());
+            assertEquals(winners.getFirst().getClaimNote(), stored.get(new VillageSourceId(1L, 5L)).getClaimNote());
+            verify(villageSourceRepository, times(2)).insertIfAbsent(eq(1L), eq(5L), anyString());
+            verify(villageSourceRepository, never()).saveAndFlush(any());
+            verify(auditLogService, times(1)).record(eq("VILLAGE_SOURCE"), eq(1L), eq("CREATE"),
+                    isNull(), eq(java.util.Map.of("villageId", 1L, "sourceId", 5L)), eq("Source linked to village"));
+        } finally {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+        }
     }
 
     @Test
