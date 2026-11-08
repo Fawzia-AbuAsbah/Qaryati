@@ -109,8 +109,13 @@ public class VillageSourceService {
                 claimNote
         );
 
-        VillageSource saved =
-                villageSourceRepository.saveAndFlush(link);
+        // The precheck is advisory. The primary key arbitrates concurrent inserts;
+        // never merge an assigned composite ID, which could overwrite citation notes.
+        if (villageSourceRepository.insertIfAbsent(villageId, sourceId, claimNote) == 0) {
+            throw new IllegalStateException(
+                    "Source is already linked to this village"
+            );
+        }
 
         Map<String, Object> afterData = new LinkedHashMap<>();
         afterData.put("villageId", villageId);
@@ -125,6 +130,6 @@ public class VillageSourceService {
                 "Source linked to village"
         );
 
-        return saved;
+        return link;
     }
 }

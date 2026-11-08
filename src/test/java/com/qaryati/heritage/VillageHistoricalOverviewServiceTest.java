@@ -113,6 +113,38 @@ class VillageHistoricalOverviewServiceTest {
         assertEquals(VerificationStatus.VERIFIED, service.getById(3L).verificationStatus());
         verifyNoInteractions(villages);
     }
+    @ParameterizedTest @ValueSource(strings = {"", " \t\n"})
+    void updatesLegacyBlankDraftAndAuditsOriginalText(String legacyOverview) {
+        ReflectionTestUtils.setField(event, "overview", legacyOverview);
+        when(links.sourceIds(3L)).thenReturn(List.of(), List.of(2L));
+
+        var updated = service.update(3L, request("Corrected overview", List.of(2L)));
+
+        assertEquals("Corrected overview", updated.overview());
+        assertEquals(VerificationStatus.DRAFT, updated.verificationStatus());
+        assertEquals(List.of(2L), updated.sourceIds());
+        verify(repository).saveAndFlush(event);
+        verify(links).replaceSources(3L, List.of(2L));
+        verify(audits).recordVillageHistory(3L, AuditAction.UPDATE,
+                new VillageHistoryAuditSnapshot(1L, legacyOverview, List.of(), "DRAFT"),
+                new VillageHistoryAuditSnapshot(1L, "Corrected overview", List.of(2L), "DRAFT"));
+    }
+    @ParameterizedTest @ValueSource(strings = {"", " \t\n"})
+    void deletesLegacyBlankDraftAndAuditsOriginalText(String legacyOverview) {
+        ReflectionTestUtils.setField(event, "overview", legacyOverview);
+        when(links.sourceIds(3L)).thenReturn(List.of());
+
+        service.delete(3L);
+
+        var order = inOrder(repository, links, audits);
+        order.verify(repository).findByIdForUpdate(3L);
+        order.verify(links).sourceIds(3L);
+        order.verify(repository).delete(event);
+        order.verify(repository).flush();
+        order.verify(audits).recordVillageHistory(3L, AuditAction.DELETE,
+                new VillageHistoryAuditSnapshot(1L, legacyOverview, List.of(), "DRAFT"), null);
+        verifyNoInteractions(villages, sources);
+    }
     @Test void multipleRowsUseOneBatchAndNoPerHistoryReads() {
         var second = VillageHistory.draft(new VillageHistoryRequest(9L, "Second"));
         ReflectionTestUtils.setField(second, "id", 8L);
