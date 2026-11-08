@@ -18,12 +18,15 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration;
+import org.springframework.boot.transaction.autoconfigure.TransactionAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.*;
 import org.springframework.context.annotation.*;
-import org.springframework.core.env.MapPropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -192,7 +195,7 @@ class CulturalHeritageCrudPostgresIntegrationTest {
             // Real source lookup fails inside source linking after a history has been flushed.
             assertThrows(NoSuchElementException.class, () -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
                 var history = repository.saveAndFlush(CulturalHeritage.draft(new CulturalHeritageRequest(fixture[0][1], "Failed source", CulturalHeritageType.CRAFT, "Description")));
-                links.linkNewCulturalHeritage(history.getId(), List.of(Long.MAX_VALUE));
+                links.linkNewCulturalHeritage(history.getId(), List.of(com.qaryati.heritage.MissingFixtureId.in(jdbc, "sources")));
             }));
             assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM public.cultural_heritage WHERE village_id=?", Integer.class, fixture[0][1]));
         } finally {
@@ -207,12 +210,14 @@ class CulturalHeritageCrudPostgresIntegrationTest {
     @Test void auditFailureRestoresUpdatesAndDeletedHistoryWithItsCascadedLinks() {
         role("EDITOR");
         long[] fixture = new TransactionTemplate(transactions).execute(tx -> fixture());
-        long replacementSource = jdbc.queryForObject("INSERT INTO public.sources(title,source_type) VALUES ('replacement','BOOK') RETURNING id",Long.class);
+        Long[] replacementSource = {null};
         try {
+            replacementSource[0] = new TransactionTemplate(transactions).execute(tx ->
+                    jdbc.queryForObject("INSERT INTO public.sources(title,source_type) VALUES ('replacement','BOOK') RETURNING id", Long.class));
             var created = service.create(request(fixture, "Original"));
             doThrow(new IllegalStateException("audit failed")).when(audits).recordCulturalHeritage(any(), any(), any(), any());
             assertThrows(IllegalStateException.class, () -> service.update(created.id(),
-                    new CulturalHeritageCrudRequest(fixture[1],"Revised",CulturalHeritageType.FOOD,"changed",List.of(replacementSource))));
+                    new CulturalHeritageCrudRequest(fixture[1],"Revised",CulturalHeritageType.FOOD,"changed",List.of(replacementSource[0]))));
             assertEquals("Original", service.getById(created.id()).name());
             assertEquals(List.of(fixture[2]), links.sourceIds(created.id()));
             assertThrows(IllegalStateException.class, () -> service.delete(created.id()));
@@ -222,15 +227,20 @@ class CulturalHeritageCrudPostgresIntegrationTest {
             new TransactionTemplate(transactions).executeWithoutResult(tx -> {
                 jdbc.update("DELETE FROM public.cultural_heritage WHERE village_id=?", fixture[1]);
                 jdbc.update("DELETE FROM public.sources WHERE id=?", fixture[2]);
-                jdbc.update("DELETE FROM public.sources WHERE id=?", replacementSource);
+                if (replacementSource[0] != null) jdbc.update("DELETE FROM public.sources WHERE id=?", replacementSource[0]);
                 jdbc.update("DELETE FROM public.villages WHERE id=?", fixture[1]);
                 jdbc.update("DELETE FROM public.governorates WHERE id=?", fixture[0]);
             });
         }
     }
-    @Configuration(proxyBeanMethods = false) @EnableAutoConfiguration
+    @org.springframework.boot.test.context.TestComponent
+    @Configuration(proxyBeanMethods = false)
+    @ImportAutoConfiguration({DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class,
+            JdbcTemplateAutoConfiguration.class, TransactionAutoConfiguration.class})
+    @org.springframework.transaction.annotation.EnableTransactionManagement
     @EntityScan(basePackageClasses = {CulturalHeritage.class, Source.class})
-    @org.springframework.data.jpa.repository.config.EnableJpaRepositories(basePackageClasses = {CulturalHeritageRepository.class, SourceRepository.class})
+    @org.springframework.data.jpa.repository.config.EnableJpaRepositories(basePackageClasses = {CulturalHeritageRepository.class, SourceRepository.class},
+            includeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {CulturalHeritageRepository.class, SourceRepository.class}))
     @Import({CulturalHeritageCrudService.class, CulturalHeritageSourceLinksService.class})
     static class Config {
         @Bean CulturalHeritageSourceLinkRepository links(EntityManager em) { return new CulturalHeritageSourceLinkRepository(em); }
@@ -242,21 +252,8 @@ class CulturalHeritageCrudPostgresIntegrationTest {
     }
     static class Guard implements ApplicationContextInitializer<ConfigurableApplicationContext> {
         public void initialize(ConfigurableApplicationContext context) {
-            var env = context.getEnvironment();
-            String url = "jdbc:postgresql://localhost:5432/qaryati_test_db";
-            if (!"verified-test-db".equals(System.getenv("QARYATI_CULTURAL_CRUD_TESTS"))
-                    || !Arrays.asList(env.getActiveProfiles()).contains("test")
-                    || !url.equals(env.getProperty("spring.datasource.url"))) throw new IllegalStateException("Dedicated database opt-in required");
-            try (var connection = DriverManager.getConnection(url, env.getRequiredProperty("spring.datasource.username"), env.getRequiredProperty("spring.datasource.password"));
-                    var statement = connection.createStatement(); var result = statement.executeQuery("SELECT current_database(), current_user")) {
-                if (!"PostgreSQL".equals(connection.getMetaData().getDatabaseProductName()) || !result.next()
-                        || !"qaryati_test_db".equals(result.getString(1)) || !env.getRequiredProperty("spring.datasource.username").equals(result.getString(2)))
-                    throw new IllegalStateException("Database identity mismatch");
-            } catch (SQLException failure) { throw new IllegalStateException("Database identity verification failed", failure); }
-            env.getPropertySources().addFirst(new MapPropertySource("cultural-crud-test-safety", Map.of(
-                    "spring.datasource.url", url, "spring.datasource.hikari.jdbc-url", url, "spring.flyway.enabled", "false",
-                    "spring.jpa.hibernate.ddl-auto", "none", "spring.jpa.properties.hibernate.hbm2ddl.auto", "none",
-                    "spring.jpa.properties.jakarta.persistence.schema-generation.database.action", "none")));
+            com.qaryati.heritage.DedicatedPostgresSafety.initialize(context,
+                    "verified-test-db".equals(System.getenv("QARYATI_CULTURAL_CRUD_TESTS")), false);
         }
     }
 }
