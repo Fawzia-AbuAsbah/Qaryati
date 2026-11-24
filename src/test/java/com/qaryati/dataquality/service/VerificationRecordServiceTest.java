@@ -1,6 +1,7 @@
 package com.qaryati.dataquality.service;
 
 import com.qaryati.dataquality.dto.CreateVerificationRequest;
+import com.qaryati.dataquality.dto.VerificationRecordResponse;
 import com.qaryati.dataquality.entity.VerificationRecord;
 import com.qaryati.dataquality.enums.VerificationDecision;
 import com.qaryati.dataquality.repository.VerificationRecordRepository;
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -19,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.OffsetDateTime;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -37,6 +41,60 @@ class VerificationRecordServiceTest {
     private void authenticate() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(" Reviewer ", null, List.of()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"VILLAGE", " VILLAGE ", "\tVILLAGE\n"})
+    void retrievesNormalizedTargetAndPreservesResponseFieldsAndRepositoryOrder(String entityType) {
+        var reviewedAt = OffsetDateTime.parse("2026-11-08T10:00:00Z");
+        var latest = new VerificationRecord("VILLAGE", 7L, 42L, VerificationDecision.VERIFIED, "Reviewed reason");
+        ReflectionTestUtils.setField(latest, "id", 9L);
+        ReflectionTestUtils.setField(latest, "reviewedAt", reviewedAt);
+        var older = new VerificationRecord("VILLAGE", 7L, 43L, VerificationDecision.NEEDS_REVISION, null);
+        ReflectionTestUtils.setField(older, "id", 8L);
+        ReflectionTestUtils.setField(older, "reviewedAt", reviewedAt.minusDays(1));
+        when(repository.findByEntityTypeAndEntityIdOrderByReviewedAtDesc("VILLAGE", 7L))
+                .thenReturn(List.of(latest, older));
+
+        assertEquals(List.of(
+                new VerificationRecordResponse(9L, "VILLAGE", 7L, 42L, VerificationDecision.VERIFIED, "Reviewed reason", reviewedAt),
+                new VerificationRecordResponse(8L, "VILLAGE", 7L, 43L, VerificationDecision.NEEDS_REVISION, null, reviewedAt.minusDays(1))),
+                service.getVerifications(entityType, 7L));
+        verify(repository).findByEntityTypeAndEntityIdOrderByReviewedAtDesc("VILLAGE", 7L);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(villages, lookup, audit);
+    }
+
+    @Test
+    void validTargetWithoutRecordsStillReturnsEmptyListWithoutExistenceLookup() {
+        when(repository.findByEntityTypeAndEntityIdOrderByReviewedAtDesc("VILLAGE", Long.MAX_VALUE))
+                .thenReturn(List.of());
+        assertEquals(List.of(), service.getVerifications("VILLAGE", Long.MAX_VALUE));
+        verifyNoInteractions(villages, lookup, audit);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t\n", "village", "POPULATION_RECORD", "VILLAGES"})
+    void rejectsInvalidRetrievalTypesBeforeRepositoryAccess(String entityType) {
+        assertThrows(IllegalArgumentException.class, () -> service.getVerifications(entityType, 7L));
+        verifyNoInteractions(repository, villages, lookup, audit);
+    }
+
+    @Test
+    void rejectsOverlongRetrievalTypeBeforeRepositoryAccess() {
+        assertEquals("Invalid entity type", assertThrows(IllegalArgumentException.class,
+                () -> service.getVerifications("VILLAGE" + " ".repeat(74), 7L)).getMessage());
+        verifyNoInteractions(repository, villages, lookup, audit);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(longs = {0, -1, Long.MIN_VALUE})
+    void rejectsInvalidRetrievalIdsBeforeRepositoryAccess(Long entityId) {
+        assertEquals("Entity ID must be positive", assertThrows(IllegalArgumentException.class,
+                () -> service.getVerifications("VILLAGE", entityId)).getMessage());
+        verifyNoInteractions(repository, villages, lookup, audit);
     }
 
     @ParameterizedTest

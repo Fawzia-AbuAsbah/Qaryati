@@ -7,6 +7,8 @@ import com.qaryati.security.api.*;
 import java.time.LocalDate;
 import java.util.*;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -52,7 +54,29 @@ class VillageHistoryAuditTest {
         assertThrows(IllegalArgumentException.class, () -> writer.recordVillageHistory(1L, null, before, after));
         assertThrows(IllegalArgumentException.class, () -> new VillageHistoryAuditSnapshot(1L, "x", List.of(), "INVALID"));
         assertThrows(IllegalArgumentException.class, () -> new VillageHistoryAuditSnapshot(1L, "x", List.of(-1L), "DRAFT"));
+        assertThrows(IllegalArgumentException.class, () -> new VillageHistoryAuditSnapshot(1L, null, List.of(), "DRAFT"));
         assertThrows(UnsupportedOperationException.class, () -> before.sourceIds().add(5L));
+    }
+    @ParameterizedTest @ValueSource(strings = {"", " \t\n"})
+    void preservesLegacyBlankTextInUpdateAndDeleteAudits(String legacyOverview) {
+        try (var context = context()) {
+            var writer = context.getBean(AuditWriter.class);
+            var legacy = new VillageHistoryAuditSnapshot(1L, legacyOverview, List.of(), "DRAFT");
+            writer.recordVillageHistory(7L, AuditAction.UPDATE, legacy, after);
+            writer.recordVillageHistory(7L, AuditAction.DELETE, legacy, null);
+
+            var captor = ArgumentCaptor.forClass(AuditLog.class);
+            verify(context.getBean(AuditLogRepository.class), times(2)).save(captor.capture());
+            var logs = captor.getAllValues();
+            var expected = Map.of("villageId", 1L, "overview", legacyOverview,
+                    "sourceIds", List.of(), "verificationStatus", "DRAFT");
+            assertEquals("UPDATE", logs.get(0).getAction());
+            assertEquals(expected, logs.get(0).getBeforeData());
+            assertEquals("Revised", logs.get(0).getAfterData().get("overview"));
+            assertEquals("DELETE", logs.get(1).getAction());
+            assertEquals(expected, logs.get(1).getBeforeData());
+            assertNull(logs.get(1).getAfterData());
+        }
     }
     @Test void joinsCallerAndAuditFailureRollsBack() {
         try (var context = context()) {
