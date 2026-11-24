@@ -7,6 +7,10 @@ import com.qaryati.agriculture.mapper.VillageAgricultureMapper;
 import com.qaryati.agriculture.repository.AgriculturalProductRepository;
 import com.qaryati.agriculture.repository.VillageAgricultureRepository;
 import com.qaryati.agriculture.dto.VillageAgricultureRequest;
+import com.qaryati.village.api.VillageLookupApi;
+import com.qaryati.village.api.VillageLookupResult;
+import com.qaryati.village.api.VillageLookupStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,16 +26,20 @@ class VillageAgricultureServiceTest {
     private VillageAgricultureRepository repository;
     private VillageAgricultureService service;
     private AgriculturalProductRepository productRepository;
+    private VillageLookupApi villages;
+
     @BeforeEach
     void setUp() {
 
         repository = mock(VillageAgricultureRepository.class);
 
         productRepository = mock(AgriculturalProductRepository.class);
+        villages = mock(VillageLookupApi.class);
         service = new VillageAgricultureService(
                 repository,
                 productRepository,
-                new VillageAgricultureMapper()
+                new VillageAgricultureMapper(),
+                villages
         );
     }
 
@@ -120,7 +128,7 @@ class VillageAgricultureServiceTest {
         when(repository.findById(1L))
                 .thenReturn(Optional.of(relation));
 
-        when(repository.save(any(VillageAgriculture.class)))
+        when(repository.saveAndFlush(any(VillageAgriculture.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         var request = new com.qaryati.agriculture.dto.VillageAgricultureRequest(
@@ -133,7 +141,7 @@ class VillageAgricultureServiceTest {
         assertEquals("Updated description", result.description());
         assertEquals(AgricultureImportance.HIGH, result.importance());
 
-        verify(repository).save(relation);
+        verify(repository).saveAndFlush(relation);
     }
 
     @Test
@@ -199,11 +207,46 @@ class VillageAgricultureServiceTest {
     }
 
     @Test
+    void shouldCreateWhenVillageAndProductExist() {
+        var request = new VillageAgricultureRequest(
+                10L, 5L, "Olives", AgricultureImportance.HIGH
+        );
+
+        when(villages.findById(10L)).thenReturn(Optional.of(village(10L)));
+        when(productRepository.existsById(5L)).thenReturn(true);
+        when(repository.existsByVillageIdAndProductId(10L, 5L)).thenReturn(false);
+        when(repository.saveAndFlush(any(VillageAgriculture.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = service.create(request);
+
+        assertEquals(10L, response.villageId());
+        assertEquals(5L, response.productId());
+        assertEquals(AgricultureImportance.HIGH, response.importance());
+        verify(repository).saveAndFlush(any(VillageAgriculture.class));
+    }
+
+    @Test
+    void shouldRejectCreateWhenVillageDoesNotExist() {
+        var request = new VillageAgricultureRequest(
+                10L, 5L, "Olives", AgricultureImportance.HIGH
+        );
+
+        when(villages.findById(10L)).thenReturn(Optional.empty());
+
+        var ex = assertThrows(ResponseStatusException.class, () -> service.create(request));
+
+        assertEquals(404, ex.getStatusCode().value());
+        verifyNoInteractions(productRepository, repository);
+    }
+
+    @Test
     void shouldRejectCreateWhenProductDoesNotExist() {
         var request = new VillageAgricultureRequest(
                 10L, 5L, "Olives", AgricultureImportance.HIGH
         );
 
+        when(villages.findById(10L)).thenReturn(Optional.of(village(10L)));
         when(productRepository.existsById(5L)).thenReturn(false);
 
         var ex = assertThrows(
@@ -221,6 +264,7 @@ class VillageAgricultureServiceTest {
                 10L, 5L, "Olives", AgricultureImportance.HIGH
         );
 
+        when(villages.findById(10L)).thenReturn(Optional.of(village(10L)));
         when(productRepository.existsById(5L)).thenReturn(true);
         when(repository.existsByVillageIdAndProductId(10L, 5L))
                 .thenReturn(true);
@@ -235,22 +279,39 @@ class VillageAgricultureServiceTest {
     }
 
     @Test
-    void shouldNotSaveWithoutVillageVerification() {
+    void shouldRejectInvalidVillageIdBeforeLookup() {
         var request = new VillageAgricultureRequest(
-                10L, 5L, "Olives", AgricultureImportance.HIGH
+                -1L, 5L, "Olives", AgricultureImportance.HIGH
         );
-
-        when(productRepository.existsById(5L)).thenReturn(true);
-        when(repository.existsByVillageIdAndProductId(10L, 5L))
-                .thenReturn(false);
 
         var ex = assertThrows(
                 ResponseStatusException.class,
                 () -> service.create(request)
         );
 
-        assertEquals(503, ex.getStatusCode().value());
-        verify(repository, never()).save(any());
+        assertEquals(400, ex.getStatusCode().value());
+        verifyNoInteractions(villages, productRepository, repository);
+    }
+
+    @Test
+    void shouldTranslateWriteConstraintFailureToConflict() {
+        var request = new VillageAgricultureRequest(
+                10L, 5L, "Olives", AgricultureImportance.HIGH
+        );
+
+        when(villages.findById(10L)).thenReturn(Optional.of(village(10L)));
+        when(productRepository.existsById(5L)).thenReturn(true);
+        when(repository.existsByVillageIdAndProductId(10L, 5L)).thenReturn(false);
+        when(repository.saveAndFlush(any(VillageAgriculture.class)))
+                .thenThrow(new DataIntegrityViolationException("constraint"));
+
+        var ex = assertThrows(ResponseStatusException.class, () -> service.create(request));
+
+        assertEquals(409, ex.getStatusCode().value());
+    }
+
+    private VillageLookupResult village(Long id) {
+        return new VillageLookupResult(id, VillageLookupStatus.DRAFT, false);
     }
 
 }
