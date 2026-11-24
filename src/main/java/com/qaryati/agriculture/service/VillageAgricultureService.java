@@ -7,11 +7,12 @@ import com.qaryati.agriculture.mapper.VillageAgricultureMapper;
 import com.qaryati.agriculture.repository.AgriculturalProductRepository;
 import com.qaryati.agriculture.repository.VillageAgricultureRepository;
 import com.qaryati.agriculture.dto.VillageAgricultureRequest;
+import com.qaryati.village.api.VillageLookupApi;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import com.qaryati.agriculture.dto.VillageAgricultureRequest;
 import java.util.List;
 
 @Service
@@ -20,19 +21,24 @@ public class VillageAgricultureService {
     private final VillageAgricultureRepository repository;
     private final AgriculturalProductRepository productRepository;
     private final VillageAgricultureMapper mapper;
+    private final VillageLookupApi villages;
 
     public VillageAgricultureService(
             VillageAgricultureRepository repository,
             AgriculturalProductRepository productRepository,
-            VillageAgricultureMapper mapper) {
+            VillageAgricultureMapper mapper,
+            VillageLookupApi villages) {
 
         this.repository = repository;
         this.productRepository = productRepository;
         this.mapper = mapper;
+        this.villages = villages;
     }
 
     @Transactional(readOnly = true)
     public VillageAgricultureResponse getById(Long id) {
+
+        validateId(id);
 
         VillageAgriculture relation = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -47,6 +53,8 @@ public class VillageAgricultureService {
     public List<VillageAgricultureResponse> getByVillageId(
             Long villageId) {
 
+        validateId(villageId);
+
         return repository.findByVillageId(villageId)
                 .stream()
                 .map(mapper::toResponse)
@@ -56,6 +64,8 @@ public class VillageAgricultureService {
     @Transactional(readOnly = true)
     public List<VillageAgricultureResponse> getByProductId(
             Long productId) {
+
+        validateId(productId);
 
         return repository.findByProductId(productId)
                 .stream()
@@ -67,6 +77,8 @@ public class VillageAgricultureService {
     public VillageAgricultureResponse update(
             Long id,
             VillageAgricultureRequest request) {
+
+        validateId(id);
 
         VillageAgriculture relation = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -85,13 +97,13 @@ public class VillageAgricultureService {
 
         mapper.updateEntity(request, relation);
 
-        VillageAgriculture saved = repository.save(relation);
-
-        return mapper.toResponse(saved);
+        return save(relation);
     }
 
     @Transactional
     public void delete(Long id) {
+
+        validateId(id);
 
         VillageAgriculture relation = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -99,14 +111,20 @@ public class VillageAgricultureService {
                         "Village agriculture record not found"
                 ));
 
-        repository.delete(relation);
+        try {
+            repository.delete(relation);
+            repository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw integrityConflict();
+        }
     }
 
     @Transactional
     public VillageAgricultureResponse create(
             VillageAgricultureRequest request) {
 
-        // 1. Check that the product exists
+        requireVillage(request.villageId());
+
         if (!productRepository.existsById(request.productId())) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
@@ -114,7 +132,6 @@ public class VillageAgricultureService {
             );
         }
 
-        // 2. Check that the relationship does not already exist
         if (repository.existsByVillageIdAndProductId(
                 request.villageId(), request.productId())) {
 
@@ -124,12 +141,40 @@ public class VillageAgricultureService {
             );
         }
 
-        // 3. Village verification is not implemented yet.
-        // Do not save until the Village module exposes its public API.
-        throw new ResponseStatusException(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                "Village verification is not available yet"
-        );
+        return save(mapper.toEntity(request));
     }
 
+    private void requireVillage(Long villageId) {
+        validateId(villageId);
+        if (villages.findById(villageId).isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Village not found"
+            );
+        }
+    }
+
+    private VillageAgricultureResponse save(VillageAgriculture relation) {
+        try {
+            return mapper.toResponse(repository.saveAndFlush(relation));
+        } catch (DataIntegrityViolationException ex) {
+            throw integrityConflict();
+        }
+    }
+
+    private void validateId(Long id) {
+        if (id == null || id <= 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "IDs must be positive"
+            );
+        }
+    }
+
+    private ResponseStatusException integrityConflict() {
+        return new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Village agriculture write conflicts with database constraints"
+        );
+    }
 }

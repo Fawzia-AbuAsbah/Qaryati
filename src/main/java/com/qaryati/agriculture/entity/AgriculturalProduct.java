@@ -18,9 +18,10 @@ public class AgriculturalProduct {
     @Column(name = "name_en", length = 160)
     private String nameEn;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "product_type", nullable = false,
             length = 25)
-    private String productType;
+    private AgriculturalProductType productType;
 
     public AgriculturalProduct() {
     }
@@ -50,10 +51,15 @@ public class AgriculturalProduct {
     }
 
     public String getProductType() {
-        return productType;
+        return productType == null ? null : productType.name();
     }
 
-    public void setProductType(String productType) {
+    public void setProductType(AgriculturalProductType productType) {
         this.productType = productType;
+    }
+
+    /** Retained for Java callers compiled against the earlier String-based entity API. */
+    public void setProductType(String productType) {
+        this.productType = productType == null ? null : AgriculturalProductType.valueOf(productType);
     }
 }

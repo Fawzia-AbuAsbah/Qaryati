@@ -4,7 +4,7 @@ import com.qaryati.village.entity.LocalAuthority;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -98,7 +98,7 @@ public class LocalAuthorityTestDatabaseSupport
                 "Local Authority tests require explicitly approved, isolated test configuration; values withheld");
     }
 
-    @Configuration(proxyBeanMethods = false)
+    @TestConfiguration(proxyBeanMethods = false)
     @EnableTransactionManagement
     @EnableJpaRepositories(basePackageClasses = LocalAuthorityRepository.class)
     static class PersistenceConfiguration {
