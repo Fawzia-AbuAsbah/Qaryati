@@ -17,6 +17,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.*;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionExecution;
+import org.springframework.transaction.TransactionExecutionListener;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -113,21 +117,49 @@ class HeritageSiteCrudPostgresIntegrationTest {
         try {
             doThrow(new IllegalStateException("controlled audit failure")).when(audits)
                     .recordHeritageSite(anyLong(), any(), nullable(HeritageSiteAuditSnapshot.class), nullable(HeritageSiteAuditSnapshot.class));
-            assertThrows(IllegalStateException.class, () -> service.update(fixture.site(), request(fixture.village(), fixture.replacement(), "Changed")));
+            assertThrows(IllegalStateException.class, () -> rejectCommit(
+                    () -> service.update(fixture.site(), request(fixture.village(), fixture.replacement(), "Changed"))));
             assertEquals("Before", service.getById(fixture.site()).name());
             assertEquals(List.of(fixture.source()), links.sourceIds(fixture.site()));
-            assertThrows(IllegalStateException.class, () -> service.delete(fixture.site()));
+            assertThrows(IllegalStateException.class, () -> rejectCommit(() -> service.delete(fixture.site())));
             assertTrue(repository.existsById(fixture.site()));
             assertEquals(List.of(fixture.source()), links.sourceIds(fixture.site()));
             reset(audits);
             assertThrows(org.springframework.web.server.ResponseStatusException.class,
-                    () -> service.create(request(fixture.village(), Long.MAX_VALUE, "Invalid source")));
+                    () -> rejectCommit(() -> service.create(request(fixture.village(), Long.MAX_VALUE, "Invalid source"))));
             assertEquals(1, service.getAll(0, 20, fixture.village()).totalElements());
             assertThrows(org.springframework.web.server.ResponseStatusException.class,
-                    () -> service.update(fixture.site(), request(fixture.village(), Long.MAX_VALUE, "Changed")));
+                    () -> rejectCommit(() -> service.update(fixture.site(), request(fixture.village(), Long.MAX_VALUE, "Changed"))));
             assertEquals("Before", service.getById(fixture.site()).name());
             assertEquals(List.of(fixture.source()), links.sourceIds(fixture.site()));
         } finally { cleanup(fixture); }
+    }
+
+    /** Veto unexpected commits without adding an outer transaction that could mask service rollback behavior. */
+    private void rejectCommit(Runnable operation) {
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive(),
+                "Expected-failure calls require service-owned transactions");
+        var manager = assertInstanceOf(AbstractPlatformTransactionManager.class, transactions,
+                "Commit protection requires Spring's transaction manager");
+        synchronized (manager) {
+            var original = manager.getTransactionExecutionListeners();
+            assertNotNull(original);
+            var listeners = new ArrayList<>(original);
+            Thread testThread = Thread.currentThread();
+            listeners.add(new TransactionExecutionListener() {
+                @Override public void beforeCommit(TransactionExecution transaction) {
+                    if (Thread.currentThread() == testThread && transaction.isNewTransaction())
+                        throw new AssertionError("Expected-failure service call attempted to commit");
+                }
+            });
+            // Snapshot instead of mutating a listener list that another transaction may be iterating.
+            manager.setTransactionExecutionListeners(List.copyOf(listeners));
+            try {
+                operation.run();
+            } finally {
+                manager.setTransactionExecutionListeners(original);
+            }
+        }
     }
 
     private record Fixture(long site, long village, long source, long replacement, long governorate) {}
@@ -161,14 +193,18 @@ class HeritageSiteCrudPostgresIntegrationTest {
                     .when(audits).recordHeritageSite(anyLong(), any(), nullable(HeritageSiteAuditSnapshot.class), nullable(HeritageSiteAuditSnapshot.class));
             HeritageSiteServiceTest.role("ADMIN");
             assertThrows(RuntimeException.class, () -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                long village = village();
-                long source = source();
-                if (auditFailure) service.create(request(village, source, "Rolled back"));
-                else {
-                    // Existing row and valid association must also roll back on replacement failure.
-                    reset(audits);
-                    id[0] = service.create(request(village, source, "Before")).id();
-                    service.update(id[0], request(village, Long.MAX_VALUE, "After"));
+                try {
+                    long village = village();
+                    long source = source();
+                    if (auditFailure) service.create(request(village, source, "Rolled back"));
+                    else {
+                        // Existing row and valid association must also roll back on replacement failure.
+                        reset(audits);
+                        id[0] = service.create(request(village, source, "Before")).id();
+                        service.update(id[0], request(village, Long.MAX_VALUE, "After"));
+                    }
+                } finally {
+                    tx.setRollbackOnly();
                 }
             }));
             assertFalse(repository.existsById(id[0]));

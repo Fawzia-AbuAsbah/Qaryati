@@ -1,6 +1,7 @@
 
 package com.qaryati.dataquality.controller;
 
+import com.qaryati.dataquality.DataQualityTestDatabaseGuard;
 import com.qaryati.dataquality.entity.DataConflict;
 import com.qaryati.dataquality.enums.DataConflictStatus;
 import com.qaryati.dataquality.repository.DataConflictRepository;
@@ -22,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = DataQualityTestDatabaseGuard.class)
 @Transactional
 class DataConflictControllerIntegrationTest {
 

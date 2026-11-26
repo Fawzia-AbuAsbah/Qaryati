@@ -1,5 +1,6 @@
 package com.qaryati.village.repository;
 
+import com.qaryati.heritage.DedicatedPostgresSafety;
 import com.qaryati.village.entity.Governorate;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.core.env.Environment;
+import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -17,12 +18,13 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.SQLException;
+import java.util.Locale;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * PostgreSQL tests against the Flyway schema, rolled back after each test.
+ * PostgreSQL tests against a pre-provisioned Flyway schema, rolled back after each test.
  * Before running, independently verify that qaryati_test_db exists and is
  * dedicated to tests, then explicitly set:
  * -Dqaryati.governorate-tests.database-verified=true
@@ -225,31 +227,18 @@ class GovernorateRepositoryIntegrationTest {
     }
 
     /**
-     * Runs before context refresh, before Flyway or a DataSource can connect.
-     * The explicit flag records external verification; it does not perform it.
+     * Validates configuration and PostgreSQL identity before context refresh.
+     * The explicit flag still requires independent verification of a dedicated target.
      */
     static class VerifiedTestDatabaseInitializer
             implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
-        private static final String TEST_URL =
-                "jdbc:postgresql://localhost:5432/qaryati_test_db";
-
         @Override
         public void initialize(ConfigurableApplicationContext context) {
-            Environment environment = context.getEnvironment();
-            String url = environment.getProperty("spring.datasource.url");
-            String flywayUrl = environment.getProperty("spring.flyway.url");
-            String jpaUrl = environment.getProperty("spring.jpa.properties.jakarta.persistence.jdbc.url");
-            String hikariUrl = environment.getProperty("spring.datasource.hikari.jdbc-url");
-            if (!TEST_URL.equals(url)
-                    || (flywayUrl != null && !TEST_URL.equals(flywayUrl))
-                    || (jpaUrl != null && !TEST_URL.equals(jpaUrl))
-                    || (hikariUrl != null && !TEST_URL.equals(hikariUrl))) {
-                throw new IllegalStateException(
-                        "Governorate repository tests require the isolated JDBC URL " + TEST_URL);
-            }
-            if (!environment.getProperty(
-                    "qaryati.governorate-tests.database-verified", Boolean.class, false)) {
+            var environment = context.getEnvironment();
+            boolean approved = environment.getProperty(
+                    "qaryati.governorate-tests.database-verified", Boolean.class, false);
+            if (!approved) {
                 throw new IllegalStateException(
                         "Verify qaryati_test_db exists and is dedicated to tests before setting "
                                 + "qaryati.governorate-tests.database-verified=true");
@@ -257,6 +246,18 @@ class GovernorateRepositoryIntegrationTest {
             if (!"validate".equals(environment.getProperty("spring.jpa.hibernate.ddl-auto"))) {
                 throw new IllegalStateException("Repository tests require Hibernate ddl-auto=validate");
             }
+            // Ordinary repository tests must not configure a separate Flyway datasource or migration setup.
+            for (var source : environment.getPropertySources()) {
+                if (!(source instanceof EnumerablePropertySource<?> enumerable)) continue;
+                for (String name : enumerable.getPropertyNames()) {
+                    String key = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                    if (key.startsWith("springflyway") && !key.equals("springflywayenabled")
+                            && !key.equals("springflywaycleandisabled")) {
+                        throw new IllegalStateException("Unsupported Flyway override for governorate repository tests");
+                    }
+                }
+            }
+            DedicatedPostgresSafety.initialize(context, approved, true);
         }
     }
 }

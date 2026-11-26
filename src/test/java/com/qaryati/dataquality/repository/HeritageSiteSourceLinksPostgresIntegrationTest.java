@@ -5,6 +5,7 @@ import com.qaryati.dataquality.service.HeritageSiteSourceLinksService;
 import com.qaryati.dataquality.service.AuditWriterService;
 import com.qaryati.dataquality.service.AuditLogService;
 import com.qaryati.dataquality.entity.Source;
+import com.qaryati.heritage.DedicatedPostgresSafety;
 import jakarta.persistence.EntityManager;
 import java.sql.*;
 import java.util.*;
@@ -16,7 +17,7 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.*;
 import org.springframework.context.annotation.*;
-import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -93,16 +94,20 @@ class HeritageSiteSourceLinksPostgresIntegrationTest {
         for (boolean auditFailure : List.of(false, true)) {
             long[] id = {0};
             assertThrows(RuntimeException.class, () -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                id[0] = event();
-                long source = source();
-                links.linkNewSite(id[0], List.of(source));
-                if (auditFailure) {
-                    org.springframework.security.core.context.SecurityContextHolder.clearContext();
-                    var snapshot = new HeritageSiteAuditSnapshot(1L, "test", "OTHER", null,
-                            null, null, null, List.of(source), "DRAFT");
-                    audit.recordHeritageSite(id[0], AuditAction.CREATE, null, snapshot);
-                } else {
-                    links.replaceSources(id[0], List.of(Long.MAX_VALUE));
+                try {
+                    id[0] = event();
+                    long source = source();
+                    links.linkNewSite(id[0], List.of(source));
+                    if (auditFailure) {
+                        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+                        var snapshot = new HeritageSiteAuditSnapshot(1L, "test", "OTHER", null,
+                                null, null, null, List.of(source), "DRAFT");
+                        audit.recordHeritageSite(id[0], AuditAction.CREATE, null, snapshot);
+                    } else {
+                        links.replaceSources(id[0], List.of(Long.MAX_VALUE));
+                    }
+                } finally {
+                    tx.setRollbackOnly();
                 }
             }));
             assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM public.heritage_sites WHERE id=?", Integer.class, id[0]));
@@ -138,26 +143,29 @@ class HeritageSiteSourceLinksPostgresIntegrationTest {
         }
     }
     static class Guard implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+        static final String APPROVAL_VARIABLE = "QARYATI_SITE_LINK_TESTS";
+        private final boolean approved;
+
+        public Guard() { this(System.getenv(APPROVAL_VARIABLE)); }
+
+        // Offline test seam; the Spring initializer still reads only the original environment variable.
+        Guard(String approval) { approved = "verified-test-db".equals(approval); }
+
+        @Override
         public void initialize(ConfigurableApplicationContext context) {
             var env = context.getEnvironment();
-            String url = "jdbc:postgresql://localhost:5432/qaryati_test_db";
-            if (!"verified-test-db".equals(System.getenv("QARYATI_SITE_LINK_TESTS"))
-                    || !Arrays.asList(env.getActiveProfiles()).contains("test")
-                    || !url.equals(env.getProperty("spring.datasource.url"))) throw new IllegalStateException("Dedicated test database opt-in required");
-            String username = env.getRequiredProperty("spring.datasource.username");
-            String password = env.getRequiredProperty("spring.datasource.password");
-            try (var connection = DriverManager.getConnection(url, username, password);
-                    var statement = connection.createStatement();
-                    var result = statement.executeQuery("SELECT current_database(), current_user")) {
-                if (!"PostgreSQL".equals(connection.getMetaData().getDatabaseProductName()) || !result.next()
-                        || !"qaryati_test_db".equals(result.getString(1)) || !username.equals(result.getString(2)))
-                    throw new IllegalStateException("Database identity mismatch");
-            } catch (SQLException error) { throw new IllegalStateException("Database identity verification failed", error); }
-            env.getPropertySources().addFirst(new MapPropertySource("event-link-test-safety", Map.of(
-                    "spring.datasource.url", url, "spring.datasource.hikari.jdbc-url", url,
-                    "spring.flyway.enabled", "false", "spring.jpa.hibernate.ddl-auto", "none",
-                    "spring.jpa.properties.hibernate.hbm2ddl.auto", "none",
-                    "spring.jpa.properties.jakarta.persistence.schema-generation.database.action", "none")));
+            // Ordinary integration tests must not configure a separate Flyway datasource or migration setup.
+            for (var source : env.getPropertySources()) {
+                if (!(source instanceof EnumerablePropertySource<?> enumerable)) continue;
+                for (String name : enumerable.getPropertyNames()) {
+                    String key = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                    if (key.startsWith("springflyway") && !key.equals("springflywayenabled")
+                            && !key.equals("springflywaycleandisabled")) {
+                        throw new IllegalStateException("Unsupported Flyway override for heritage site source link tests");
+                    }
+                }
+            }
+            DedicatedPostgresSafety.initialize(context, approved, true);
         }
     }
 }

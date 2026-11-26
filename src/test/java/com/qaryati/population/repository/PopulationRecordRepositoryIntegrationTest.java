@@ -1,6 +1,7 @@
 package com.qaryati.population.repository;
 
 import com.qaryati.common.exception.DuplicateResourceException;
+import com.qaryati.heritage.DedicatedPostgresSafety;
 import com.qaryati.population.entity.*;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,6 +11,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -22,14 +26,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real V1 schema, dedicated PostgreSQL database, rollback after every invocation. */
+/**
+ * Manually pre-migrated V1 schema in a disposable dedicated PostgreSQL database; rollback after every invocation.
+ * Independently verify the target before setting -Dqaryati.population-tests.database-verified=true.
+ */
 @SpringBootTest(properties = "spring.flyway.clean-disabled=true")
 @ActiveProfiles("test")
-@ContextConfiguration(initializers = PopulationTestDatabaseGuard.class)
+@ContextConfiguration(initializers = PopulationRecordRepositoryIntegrationTest.VerifiedTestDatabaseInitializer.class)
 @Transactional
 class PopulationRecordRepositoryIntegrationTest {
     @Autowired private PopulationRecordRepository repository;
@@ -424,5 +432,36 @@ class PopulationRecordRepositoryIntegrationTest {
         }
         fail("Expected PostgreSQL SQLSTATE " + expected, exception);
         // A constraint failure aborts the PostgreSQL transaction. No further SQL in that invocation.
+    }
+
+    /** Validates configuration and PostgreSQL identity before context refresh or fixture creation. */
+    static class VerifiedTestDatabaseInitializer
+            implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+        @Override
+        public void initialize(ConfigurableApplicationContext context) {
+            var environment = context.getEnvironment();
+            boolean approved = environment.getProperty(
+                    PopulationTestDatabaseGuard.VERIFIED, Boolean.class, false);
+            if (!approved) {
+                throw new IllegalStateException("Verify the dedicated qaryati_test_db before setting "
+                        + PopulationTestDatabaseGuard.VERIFIED + "=true");
+            }
+            if (!"validate".equals(environment.getProperty("spring.jpa.hibernate.ddl-auto"))
+                    || !environment.getProperty("spring.flyway.clean-disabled", Boolean.class, false)) {
+                throw new IllegalStateException("Population repository tests require ddl-auto=validate and clean disabled");
+            }
+            // Ordinary repository tests must not configure a separate Flyway datasource or migration setup.
+            for (var source : environment.getPropertySources()) {
+                if (!(source instanceof EnumerablePropertySource<?> enumerable)) continue;
+                for (String name : enumerable.getPropertyNames()) {
+                    String key = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                    if (key.startsWith("springflyway") && !key.equals("springflywayenabled")
+                            && !key.equals("springflywaycleandisabled")) {
+                        throw new IllegalStateException("Unsupported Flyway override for population repository tests");
+                    }
+                }
+            }
+            DedicatedPostgresSafety.initialize(context, approved, true);
+        }
     }
 }

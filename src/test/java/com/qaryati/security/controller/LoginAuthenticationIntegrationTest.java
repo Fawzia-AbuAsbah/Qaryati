@@ -1,5 +1,6 @@
 package com.qaryati.security.controller;
 
+import com.qaryati.security.SecurityTestDatabaseGuard;
 import com.qaryati.security.entity.User;
 import com.qaryati.security.repository.UserRepository;
 import com.qaryati.security.service.JwtService;
@@ -12,6 +13,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = SecurityTestDatabaseGuard.class)
 @Transactional
 class LoginAuthenticationIntegrationTest {
     @Autowired MockMvc mvc;

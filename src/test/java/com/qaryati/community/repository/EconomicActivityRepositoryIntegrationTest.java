@@ -1,5 +1,6 @@
 package com.qaryati.community.repository;
 
+import com.qaryati.community.CommunityTestDatabaseGuard;
 import com.qaryati.community.entity.EconomicActivity;
 import com.qaryati.community.entity.EconomicActivityType;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -17,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = CommunityTestDatabaseGuard.class)
 @Transactional
 class EconomicActivityRepositoryIntegrationTest {
 

@@ -13,7 +13,7 @@ import org.springframework.test.context.*;
 @EnabledIfEnvironmentVariable(named = "QARYATI_REAL_AUDIT_TESTS", matches = "verified-test-db")
 @SpringBootTest(classes = RealAuditPostgresConfig.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles("test")
-@ContextConfiguration(initializers = RealAuditPostgresGuard.class)
+@ContextConfiguration(initializers = VillageHistoryRealAuditPostgresIntegrationTest.Guard.class)
 class CulturalHeritageRealAuditPostgresIntegrationTest extends RealAuditPostgresContract {
     @Autowired CulturalHeritageCrudService service;
     @Autowired CulturalHeritageSourceLinks links;

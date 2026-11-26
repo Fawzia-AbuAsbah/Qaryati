@@ -1,6 +1,7 @@
 
 package com.qaryati.security.config;
 
+import com.qaryati.security.SecurityTestDatabaseGuard;
 import com.qaryati.security.controller.RoleTestController;
 import com.qaryati.security.entity.User;
 import com.qaryati.security.entity.Role;
@@ -17,6 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -32,6 +34,7 @@ import java.util.List;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = SecurityTestDatabaseGuard.class)
 @Transactional
 @Import(RoleTestController.class)
 class AuthorizationIntegrationTest {

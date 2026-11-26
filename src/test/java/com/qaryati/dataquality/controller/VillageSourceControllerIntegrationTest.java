@@ -1,6 +1,7 @@
 
 package com.qaryati.dataquality.controller;
 
+import com.qaryati.dataquality.DataQualityTestDatabaseGuard;
 import com.qaryati.security.entity.Role;
 import com.qaryati.security.entity.User;
 import com.qaryati.security.repository.RoleRepository;
@@ -21,6 +22,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = DataQualityTestDatabaseGuard.class)
 @Transactional
 class VillageSourceControllerIntegrationTest {
 
