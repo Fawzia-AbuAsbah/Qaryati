@@ -13,7 +13,6 @@ import com.qaryati.integration.repository.GeocodingCacheRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -44,13 +43,11 @@ public class GeocodingService {
         this.properties = properties;
     }
 
-    @Transactional
     public GeocodingResponse search(String query) {
         String normalized = validateQuery(query);
         return locate("forward:" + normalized, () -> provider.forward(normalized));
     }
 
-    @Transactional
     public GeocodingResponse reverse(BigDecimal latitude, BigDecimal longitude) {
         validateCoordinates(latitude, longitude);
         BigDecimal normalizedLatitude = latitude.stripTrailingZeros();
