@@ -1,5 +1,6 @@
 package com.qaryati.integration.repository;
 
+import com.qaryati.integration.GeocodingTestDatabaseGuard;
 import tools.jackson.databind.ObjectMapper;
 import com.qaryati.integration.entity.GeocodingCache;
 import jakarta.persistence.EntityManager;
@@ -8,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -24,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = GeocodingTestDatabaseGuard.class)
 @Transactional
 class GeocodingCacheRepositoryIntegrationTest {
 

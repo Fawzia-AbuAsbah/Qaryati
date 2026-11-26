@@ -1,6 +1,9 @@
 package com.qaryati.village.repository;
 
+import org.hibernate.tool.schema.Action;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -11,6 +14,7 @@ import org.springframework.mock.env.MockEnvironment;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -108,6 +112,88 @@ class LocalAuthorityTestDatabaseGuardTest {
         environment.getPropertySources().addLast(new MapPropertySource("shadowed",
                 Map.of(key, "jdbc:postgresql://localhost:5432/qaryati_db")));
         assertThrows(IllegalStateException.class, () -> LocalAuthorityTestDatabaseSupport.validate(environment));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "javax.persistence.schema-generation.database.action",
+            "javax.persistence.schema-generation.scripts.action",
+            "javax.persistence.schema-generation.scripts.create-target",
+            "javax.persistence.jdbc.url",
+            "JAVAX_PERSISTENCE_SCHEMA_GENERATION_DATABASE_ACTION",
+            "javaxpersistenceschemagenerationdatabaseaction",
+            "javax.persistence.schemaGeneration.database.action",
+            "spring.jpa.properties.javax.persistence.schema-generation.database.action",
+            "SPRING_JPA_PROPERTIES_JAVAX_PERSISTENCE_SCHEMA_GENERATION_DATABASE_ACTION"
+    })
+    void rejectsLegacyJpaOverridesBeforeRefreshOrConnection(String key) {
+        AtomicBoolean instantiated = new AtomicBoolean();
+        try (var driver = mockStatic(DriverManager.class);
+             var context = new GenericApplicationContext()) {
+            context.setEnvironment(safe().withProperty(key, "drop-and-create"));
+            context.registerBean("connectionFactory", Object.class, () -> {
+                instantiated.set(true);
+                throw new AssertionError("Must not instantiate");
+            });
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> new LocalAuthorityTestDatabaseSupport().initialize(context));
+            assertFalse(error.getMessage().contains("drop-and-create"));
+            assertFalse(context.isActive());
+            assertFalse(instantiated.get());
+            driver.verifyNoInteractions();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"none", "validate", "create", "update", "drop", "create-drop", "drop-and-create"})
+    void rejectsLegacyDatabaseActionsEvenWhenShadowed(String action) {
+        String key = "javax.persistence.schema-generation.database.action";
+        MockEnvironment environment = safe().withProperty(key, "validate");
+        environment.getPropertySources().addLast(new MapPropertySource("shadowed-legacy-jpa",
+                Map.of(key, action)));
+        assertThrows(IllegalStateException.class, () -> LocalAuthorityTestDatabaseSupport.validate(environment));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"javax.persistence.schema-generation.database.action",
+            "javax.persistence.schema-generation.scripts.action",
+            "JAVAX_PERSISTENCE_SCHEMA_GENERATION_DATABASE_ACTION"})
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void rejectsJvmLegacyOverridesEvenWithoutSpringSystemProperties(String key) {
+        Object previous = System.getProperties().get(key);
+        try {
+            // A non-writing value still must be rejected; never install destructive JVM actions.
+            System.setProperty(key, "none");
+            MockEnvironment environment = safe();
+            assertNull(environment.getProperty(key));
+            try (var driver = mockStatic(DriverManager.class);
+                 var context = new GenericApplicationContext()) {
+                context.setEnvironment(environment);
+                assertThrows(IllegalStateException.class,
+                        () -> new LocalAuthorityTestDatabaseSupport().initialize(context));
+                assertFalse(context.isActive());
+                driver.verifyNoInteractions();
+            }
+        } finally {
+            if (previous == null) System.clearProperty(key);
+            else System.getProperties().put(key, previous);
+        }
+    }
+
+    @Test
+    void uninitializedFactoryPinsEffectiveJpaValidationAndDisablesScriptGeneration() {
+        DataSource dataSource = mock(DataSource.class);
+        var factory = new LocalAuthorityTestDatabaseSupport.PersistenceConfiguration().entityManagerFactory(dataSource);
+        Map<String, Object> properties = factory.getJpaPropertyMap();
+        assertEquals("validate", properties.get("hibernate.hbm2ddl.auto"));
+        assertEquals("validate", properties.get("jakarta.persistence.schema-generation.database.action"));
+        assertEquals("none", properties.get("jakarta.persistence.schema-generation.scripts.action"));
+        assertEquals(Action.VALIDATE, Action.interpretHbm2ddlSetting(properties.get("hibernate.hbm2ddl.auto")));
+        assertEquals(Action.VALIDATE, Action.interpretJpaSetting(
+                properties.get("jakarta.persistence.schema-generation.database.action")));
+        assertEquals(Action.NONE, Action.interpretJpaSetting(
+                properties.get("jakarta.persistence.schema-generation.scripts.action")));
+        verifyNoInteractions(dataSource);
     }
 
     @ParameterizedTest

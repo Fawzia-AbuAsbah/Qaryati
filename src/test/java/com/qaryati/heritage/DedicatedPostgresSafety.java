@@ -59,8 +59,8 @@ public final class DedicatedPostgresSafety {
                          "springmainallowbeandefinitionoverriding" -> value.equals("false");
                     case "springflywaycleandisabled" -> value.equals("true");
                     case "springsqlinitmode" -> value.equals("never");
-                    case "springjpapropertiesjakartapersistenceschemagenerationdatabaseaction",
-                         "springjpapropertiesjakartapersistenceschemagenerationscriptsaction" -> value.equals("none");
+                    case "springjpapropertiesjakartapersistenceschemagenerationdatabaseaction" -> Set.of("none", "validate").contains(value);
+                    case "springjpapropertiesjakartapersistenceschemagenerationscriptsaction" -> value.equals("none");
                     case "springjpashowsql", "springjpaopeninview" -> Set.of("true", "false").contains(value);
                     default -> false;
                 };
@@ -78,7 +78,7 @@ public final class DedicatedPostgresSafety {
                 Map.entry("spring.liquibase.enabled", "false"), Map.entry("spring.sql.init.mode", "never"),
                 Map.entry("spring.jpa.generate-ddl", "false"), Map.entry("spring.jpa.hibernate.ddl-auto", ddl),
                 Map.entry("spring.jpa.properties.hibernate.hbm2ddl.auto", ddl),
-                Map.entry("spring.jpa.properties.jakarta.persistence.schema-generation.database.action", "none"),
+                Map.entry("spring.jpa.properties.jakarta.persistence.schema-generation.database.action", ddl),
                 Map.entry("spring.jpa.properties.jakarta.persistence.schema-generation.scripts.action", "none"),
                 Map.entry("spring.main.allow-bean-definition-overriding", "false"));
     }

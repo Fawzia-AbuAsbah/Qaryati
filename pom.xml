@@ -140,6 +140,21 @@
 	<build>
 		<plugins>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<!-- Preserve Surefire's default inner-class exclusion. -->
+						<exclude>**/*$*</exclude>
+						<!-- Database tests require explicit selection and approved database setup. -->
+						<exclude>**/*IntegrationTest.java</exclude>
+						<exclude>**/*AuthorizationTest.java</exclude>
+						<exclude>**/QaryatiApplicationTests.java</exclude>
+						<exclude>**/SecurityConfigTest.java</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>

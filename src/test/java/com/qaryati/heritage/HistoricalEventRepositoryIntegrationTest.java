@@ -19,7 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -202,37 +202,25 @@ class HistoricalEventRepositoryIntegrationTest {
         }
     }
 
-    /** Checks live identity before context refresh, so Flyway cannot run first. */
+    /** Requires a manually pre-migrated dedicated database; validates identity before context refresh. */
     static class DatabaseGuard implements ApplicationContextInitializer<ConfigurableApplicationContext> {
         @Override public void initialize(ConfigurableApplicationContext context) {
             var env = context.getEnvironment();
-            if (!Arrays.asList(env.getActiveProfiles()).contains("test")
-                    || !env.getProperty("qaryati.heritage-tests.database-verified", Boolean.class, false)
-                    || !URL.equals(env.getProperty("spring.datasource.url")))
+            boolean approved = env.getProperty("qaryati.heritage-tests.database-verified", Boolean.class, false);
+            if (!approved)
                 throw new IllegalStateException("Independently verify dedicated qaryati_test_db and explicitly enable heritage tests");
-            for (String key : List.of("spring.flyway.url", "spring.datasource.hikari.jdbc-url",
-                    "spring.jpa.properties.jakarta.persistence.jdbc.url")) {
-                String value = env.getProperty(key);
-                if (value != null && !URL.equals(value)) throw new IllegalStateException("Unsafe database override: " + key);
+            // Ordinary repository tests must not configure a separate Flyway datasource or migration setup.
+            for (var source : env.getPropertySources()) {
+                if (!(source instanceof EnumerablePropertySource<?> enumerable)) continue;
+                for (String name : enumerable.getPropertyNames()) {
+                    String key = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                    if (key.startsWith("springflyway") && !key.equals("springflywayenabled")
+                            && !key.equals("springflywaycleandisabled")) {
+                        throw new IllegalStateException("Unsupported Flyway override for heritage repository tests");
+                    }
+                }
             }
-            String username = env.getRequiredProperty("spring.datasource.username");
-            String password = env.getRequiredProperty("spring.datasource.password");
-            try (Connection connection = DriverManager.getConnection(URL, username, password);
-                    Statement statement = connection.createStatement();
-                    ResultSet rs = statement.executeQuery("SELECT current_database(), current_user")) {
-                if (!"PostgreSQL".equals(connection.getMetaData().getDatabaseProductName()) || !rs.next()
-                        || !"qaryati_test_db".equals(rs.getString(1)) || !username.equals(rs.getString(2)))
-                    throw new IllegalStateException("Test database identity mismatch");
-            } catch (SQLException exception) {
-                throw new IllegalStateException("Cannot independently verify test database identity", exception);
-            }
-            // Lock migration and ORM safety properties after verifying the same connection credentials.
-            env.getPropertySources().addFirst(new MapPropertySource("heritage-test-safety", Map.of(
-                    "spring.flyway.url", URL, "spring.flyway.user", username, "spring.flyway.password", password,
-                    "spring.flyway.clean-disabled", "true", "spring.flyway.enabled", "true",
-                    "spring.jpa.hibernate.ddl-auto", "validate",
-                    "spring.jpa.properties.hibernate.hbm2ddl.auto", "validate",
-                    "spring.jpa.properties.jakarta.persistence.schema-generation.database.action", "none")));
+            DedicatedPostgresSafety.initialize(context, approved, true);
         }
     }
 }

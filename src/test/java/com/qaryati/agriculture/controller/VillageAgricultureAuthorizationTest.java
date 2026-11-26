@@ -1,6 +1,7 @@
 
 package com.qaryati.agriculture.controller;
 
+import com.qaryati.agriculture.AgricultureTestDatabaseGuard;
 import com.qaryati.security.entity.Role;
 import com.qaryati.security.entity.User;
 import com.qaryati.security.repository.RoleRepository;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = AgricultureTestDatabaseGuard.class)
 @Transactional
 class VillageAgricultureAuthorizationTest {
 

@@ -2,6 +2,7 @@ package com.qaryati.heritage;
 
 import java.sql.*;
 import java.util.*;
+import org.hibernate.tool.schema.Action;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -100,6 +101,40 @@ class DedicatedPostgresSafetyTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void schemaPolicyResolvesToRequestedHibernateActions(boolean validateSchema) {
+        var properties = DedicatedPostgresSafety.safetyProperties(validateSchema);
+        Action expected = validateSchema ? Action.VALIDATE : Action.NONE;
+        assertEquals(expected, Action.interpretJpaSetting(
+                properties.get("spring.jpa.properties.jakarta.persistence.schema-generation.database.action")));
+        assertEquals(expected, Action.interpretHbm2ddlSetting(
+                properties.get("spring.jpa.properties.hibernate.hbm2ddl.auto")));
+        assertEquals(Action.NONE, Action.interpretJpaSetting(
+                properties.get("spring.jpa.properties.jakarta.persistence.schema-generation.scripts.action")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"create", "create-only", "update", "drop", "create-drop", "drop-and-create"})
+    void rejectsWritingJpaSchemaActionsBeforeConnecting(String action) {
+        try (var driver = mockStatic(DriverManager.class)) {
+            for (String target : List.of("database", "scripts")) {
+                var env = environment();
+                env.getPropertySources().addFirst(new MapPropertySource("unsafe-schema-action", Map.of(
+                        "spring.jpa.properties.jakarta.persistence.schema-generation." + target + ".action", action)));
+                assertThrows(IllegalStateException.class, () -> DedicatedPostgresSafety.validate(env, true));
+            }
+            driver.verifyNoInteractions();
+        }
+    }
+
+    @Test void scriptActionCannotRequestValidation() {
+        var env = environment();
+        env.getPropertySources().addFirst(new MapPropertySource("unsupported-script-action", Map.of(
+                "spring.jpa.properties.jakarta.persistence.schema-generation.scripts.action", "validate")));
+        assertThrows(IllegalStateException.class, () -> DedicatedPostgresSafety.validate(env, true));
+    }
+
     @Test void onlyVerifiedIdentityInstallsSafetyProperties() throws Exception {
         for (boolean validate : List.of(false, true)) {
             try (var context = new GenericApplicationContext(); var driver = mockStatic(DriverManager.class)) {
@@ -121,7 +156,7 @@ class DedicatedPostgresSafetyTest {
                 assertEquals("false", env.getProperty("spring.flyway.enabled"));
                 assertEquals("never", env.getProperty("spring.sql.init.mode"));
                 assertEquals(validate ? "validate" : "none", env.getProperty("spring.jpa.hibernate.ddl-auto"));
-                assertEquals("none", env.getProperty("spring.jpa.properties.jakarta.persistence.schema-generation.database.action"));
+                assertEquals(validate ? "validate" : "none", env.getProperty("spring.jpa.properties.jakarta.persistence.schema-generation.database.action"));
                 assertDoesNotThrow(() -> DedicatedPostgresSafety.validate(env, true));
                 driver.verify(() -> DriverManager.getConnection(eq(DedicatedPostgresSafety.URL), any(Properties.class)));
                 driver.verifyNoMoreInteractions();

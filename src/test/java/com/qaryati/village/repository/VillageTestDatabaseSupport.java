@@ -43,6 +43,13 @@ public class VillageTestDatabaseSupport
     }
 
     static void validate(ConfigurableEnvironment environment) {
+        // Hibernate also reads JVM properties independently of Spring sources.
+        for (Object key : System.getProperties().keySet().toArray()) {
+            if (key instanceof String name) {
+                String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                require(!normalized.startsWith("javaxpersistence"));
+            }
+        }
         require(Arrays.equals(new String[]{"test"}, environment.getActiveProfiles()));
         require(environment.getProperty(APPROVED, Boolean.class, false));
         require(URL.equals(environment.getProperty("spring.datasource.url")));
@@ -76,7 +83,8 @@ public class VillageTestDatabaseSupport
                     require("validate".equals(enumerable.getProperty(key)));
                 }
                 if (normalized.startsWith("springflyway")) require(flywayKeys.contains(normalized));
-                if (normalized.startsWith("hibernate") || normalized.startsWith("jakartapersistence")) {
+                if (normalized.startsWith("hibernate") || normalized.startsWith("jakartapersistence")
+                        || normalized.startsWith("javaxpersistence")) {
                     require(false);
                 }
                 if (normalized.startsWith("springsqlinit") && !normalized.equals("springsqlinitmode")) {
@@ -122,6 +130,8 @@ public class VillageTestDatabaseSupport
             factory.setJpaVendorAdapter(adapter);
             factory.setJpaPropertyMap(Map.of(
                     "hibernate.hbm2ddl.auto", "validate",
+                    "jakarta.persistence.schema-generation.database.action", "validate",
+                    "jakarta.persistence.schema-generation.scripts.action", "none",
                     "hibernate.show_sql", "false"));
             return factory;
         }

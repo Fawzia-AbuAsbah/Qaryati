@@ -1,5 +1,6 @@
 
 package com.qaryati.security.config;
+import com.qaryati.security.SecurityTestDatabaseGuard;
 import com.qaryati.security.entity.User;
 import com.qaryati.security.repository.UserRepository;
 import com.qaryati.security.service.JwtService;
@@ -18,6 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,6 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = SecurityTestDatabaseGuard.class)
+@Transactional
 
 @Import(SecurityConfigTest.TestController.class)
 

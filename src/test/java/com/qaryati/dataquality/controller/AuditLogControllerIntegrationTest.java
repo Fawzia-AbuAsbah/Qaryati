@@ -1,6 +1,7 @@
 
 package com.qaryati.dataquality.controller;
 
+import com.qaryati.dataquality.DataQualityTestDatabaseGuard;
 import com.qaryati.dataquality.entity.AuditLog;
 import com.qaryati.dataquality.repository.AuditLogRepository;
 import com.qaryati.dataquality.service.AuditLogService;
@@ -16,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = DataQualityTestDatabaseGuard.class)
 @Transactional
 class AuditLogControllerIntegrationTest {
 

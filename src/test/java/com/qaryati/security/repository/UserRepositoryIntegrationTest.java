@@ -1,12 +1,14 @@
 
 package com.qaryati.security.repository;
 
+import com.qaryati.security.SecurityTestDatabaseGuard;
 import com.qaryati.security.entity.Role;
 import com.qaryati.security.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -14,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = SecurityTestDatabaseGuard.class)
 @Transactional
 class UserRepositoryIntegrationTest {
     @Autowired

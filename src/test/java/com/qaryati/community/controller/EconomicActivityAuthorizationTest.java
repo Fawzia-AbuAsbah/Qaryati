@@ -1,5 +1,6 @@
 package com.qaryati.community.controller;
 
+import com.qaryati.community.CommunityTestDatabaseGuard;
 import com.qaryati.community.entity.EconomicActivity;
 import com.qaryati.community.entity.EconomicActivityType;
 import com.qaryati.community.repository.EconomicActivityRepository;
@@ -15,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -29,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = CommunityTestDatabaseGuard.class)
 @Transactional
 class EconomicActivityAuthorizationTest {
 

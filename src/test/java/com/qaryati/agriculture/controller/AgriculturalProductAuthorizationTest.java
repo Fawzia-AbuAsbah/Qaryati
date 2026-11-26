@@ -1,5 +1,6 @@
 package com.qaryati.agriculture.controller;
 
+import com.qaryati.agriculture.AgricultureTestDatabaseGuard;
 import com.qaryati.agriculture.entity.AgriculturalProduct;
 import com.qaryati.agriculture.entity.AgriculturalProductType;
 import com.qaryati.agriculture.repository.AgriculturalProductRepository;
@@ -14,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,6 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = AgricultureTestDatabaseGuard.class)
 @Transactional
 class AgriculturalProductAuthorizationTest {
 

@@ -181,8 +181,12 @@ abstract class RealAuditPostgresContract {
                     try (var rows = lock.executeQuery()) { assertTrue(rows.next()); }
                 }
                 RuntimeException failure = assertThrows(RuntimeException.class, () -> boundedTransaction().executeWithoutResult(tx -> {
-                    localTimeouts();
-                    mutation.run();
+                    try {
+                        localTimeouts();
+                        mutation.run();
+                    } finally {
+                        tx.setRollbackOnly();
+                    }
                 }));
                 boolean lockTimeout = false;
                 for (Throwable cause = failure; cause != null; cause = cause.getCause())
