@@ -1,6 +1,6 @@
-﻿import { useCallback } from 'react'
+﻿import { useCallback, useEffect, useRef } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import PageState from '../components/PageState.jsx'
 import VillageCard from '../components/VillageCard.jsx'
 import { listVillages } from '../services/villageService.js'
@@ -10,12 +10,33 @@ const number = new Intl.NumberFormat('ar')
 
 export default function VillageExplorer() {
   const [params, setParams] = useSearchParams()
+  const { pathname, search } = useLocation()
   const query = params.get('q') ?? ''
   const governorate = params.get('governorate') ?? ''
   const requestedPage = Number(params.get('page'))
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
-  const load = useCallback(() => listVillages({ query, governorate, page }), [query, governorate, page])
+  const normalizedResult = useRef(null)
+  const load = useCallback(() => {
+    const cached = normalizedResult.current
+    normalizedResult.current = null
+    if (cached && cached.query === query && cached.governorate === governorate && cached.page === page) {
+      return Promise.resolve(cached.data)
+    }
+    return listVillages({ query, governorate, page })
+  }, [query, governorate, page])
   const { data, ...state } = useVillageData(load)
+
+  useEffect(() => {
+    if (!data || !params.has('page') || params.get('page') === String(data.page)) return
+    // A navigation may have changed the browser URL before this effect runs.
+    if (window.location.pathname !== pathname || window.location.search !== search) return
+
+    // Reuse this response when correcting the URL changes the load callback.
+    normalizedResult.current = { query, governorate, page: data.page, data }
+    const next = new URLSearchParams(params)
+    next.set('page', String(data.page))
+    setParams(next, { replace: true })
+  }, [data, params, setParams, pathname, search, query, governorate])
 
   function update(name, value, replace = false) {
     const next = new URLSearchParams(params)

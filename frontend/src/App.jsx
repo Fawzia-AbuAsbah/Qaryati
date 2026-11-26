@@ -1,5 +1,5 @@
-﻿import { lazy, Suspense, useEffect } from 'react'
-import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router-dom'
+﻿import { lazy, Suspense, useEffect, useLayoutEffect } from 'react'
+import { BrowserRouter, Link, matchPath, Route, Routes, useLocation } from 'react-router-dom'
 import Footer from './components/Footer.jsx'
 import Navbar from './components/Navbar.jsx'
 import PageState from './components/PageState.jsx'
@@ -10,8 +10,20 @@ import './styles/site.css'
 
 const MapPage = lazy(() => import('./pages/MapPage.jsx'))
 
+const pageTitles = [
+  ['/', 'الرئيسية'],
+  ['/villages', 'استكشاف القرى'],
+  ['/villages/:id', 'تفاصيل القرية'],
+  ['/map', 'خريطة القرى'],
+]
+
 function Layout() {
   const { pathname } = useLocation()
+  const pageTitle = pageTitles.find(([path]) => matchPath(path, pathname))?.[1] ?? 'الصفحة غير موجودة'
+
+  useLayoutEffect(() => {
+    document.title = `${pageTitle} | قريتي`
+  }, [pageTitle])
 
   useEffect(() => {
     window.scrollTo(0, 0)
