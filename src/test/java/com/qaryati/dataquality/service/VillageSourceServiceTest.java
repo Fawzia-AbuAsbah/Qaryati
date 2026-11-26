@@ -9,6 +9,9 @@ import com.qaryati.dataquality.repository.VillageSourceRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -55,6 +58,8 @@ class VillageSourceServiceTest {
         assertEquals(1, result.size());
         assertEquals(5L, result.get(0).getSourceId());
 
+        verify(villageSourceRepository).findByIdVillageId(1L);
+        verifyNoInteractions(sourceRepository, villageExistsRepository);
         verifyNoInteractions(auditLogService);
     }
 
@@ -71,7 +76,46 @@ class VillageSourceServiceTest {
         assertEquals(1, result.size());
         assertEquals(1L, result.get(0).getVillageId());
 
+        verify(villageSourceRepository).findByIdSourceId(5L);
+        verifyNoInteractions(sourceRepository, villageExistsRepository);
         verifyNoInteractions(auditLogService);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(longs = {0, -1, Long.MIN_VALUE})
+    void rejectsInvalidVillageLookupIdsBeforeRepositoryAccess(Long villageId) {
+        var failure = assertThrows(IllegalArgumentException.class,
+                () -> service.getSourcesForVillage(villageId));
+
+        assertEquals("Village ID must be positive", failure.getMessage());
+        verifyNoInteractions(villageSourceRepository, sourceRepository, villageExistsRepository, auditLogService);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(longs = {0, -1, Long.MIN_VALUE})
+    void rejectsInvalidSourceLookupIdsBeforeRepositoryAccess(Long sourceId) {
+        var failure = assertThrows(IllegalArgumentException.class,
+                () -> service.getVillagesForSource(sourceId));
+
+        assertEquals("Source ID must be positive", failure.getMessage());
+        verifyNoInteractions(villageSourceRepository, sourceRepository, villageExistsRepository, auditLogService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {1, 999, Long.MAX_VALUE})
+    void positiveLookupIdsAreForwardedAndMayReturnEmptyResults(long id) {
+        when(villageSourceRepository.findByIdVillageId(id)).thenReturn(List.of());
+        when(villageSourceRepository.findByIdSourceId(id)).thenReturn(List.of());
+
+        assertTrue(service.getSourcesForVillage(id).isEmpty());
+        assertTrue(service.getVillagesForSource(id).isEmpty());
+
+        verify(villageSourceRepository).findByIdVillageId(id);
+        verify(villageSourceRepository).findByIdSourceId(id);
+        verifyNoMoreInteractions(villageSourceRepository);
+        verifyNoInteractions(sourceRepository, villageExistsRepository, auditLogService);
     }
 
     @Test

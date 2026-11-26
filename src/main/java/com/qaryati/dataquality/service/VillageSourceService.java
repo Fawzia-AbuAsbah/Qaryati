@@ -39,11 +39,17 @@ public class VillageSourceService {
 
     @Transactional(readOnly = true)
     public List<VillageSource> getSourcesForVillage(Long villageId) {
+        if (villageId == null || villageId <= 0) {
+            throw new IllegalArgumentException("Village ID must be positive");
+        }
         return villageSourceRepository.findByIdVillageId(villageId);
     }
 
     @Transactional(readOnly = true)
     public List<VillageSource> getVillagesForSource(Long sourceId) {
+        if (sourceId == null || sourceId <= 0) {
+            throw new IllegalArgumentException("Source ID must be positive");
+        }
         return villageSourceRepository.findByIdSourceId(sourceId);
     }
 
