@@ -6,6 +6,7 @@ import com.qaryati.village.dto.GovernorateResponse;
 import com.qaryati.village.service.GovernorateService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,23 +24,27 @@ public class GovernorateController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
     public GovernorateResponse create(
             @Valid @RequestBody GovernorateRequest request) {
         return service.create(request);
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('VIEWER', 'EDITOR', 'ADMIN')")
     public List<GovernorateResponse> getAll() {
         return service.getAll();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VIEWER', 'EDITOR', 'ADMIN')")
     public GovernorateResponse getById(
             @PathVariable Long id) {
         return service.getById(id);
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
     public GovernorateResponse update(
             @PathVariable Long id,
             @Valid @RequestBody GovernorateRequest request) {
@@ -48,6 +53,7 @@ public class GovernorateController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long id) {
         service.delete(id);
     }
