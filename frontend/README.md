@@ -193,8 +193,8 @@ Governorate catalog availability is separate from the villages on a single page.
 Missing catalog entries remain null, with their original governorate IDs retained.
 Duplicate governorate IDs fail explicitly; duplicate names remain distinct rows.
 Adapters do not provide publication security: DRAFT/UNDER_REVIEW/VERIFIED/REJECTED
-rows are mapped as supplied. Backend access/publication policy, auth and RBAC,
-live API enablement, other page integrations, images and unresolved domain mappings
+rows are mapped as supplied. Backend public access/publication policy, role-aware
+village requests, live API enablement, images and unresolved domain mappings
 remain future work. There is no client-side security filtering.
 
 Interactive browser verification was unavailable during adapter validation:
@@ -207,8 +207,8 @@ was not verified in a browser.
 `VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Home/Map/Explorer/Details default. `api` selects the API path;
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
-Home, Map, Explorer and Details. Authentication uses the API base independently;
-data-quality pages are not integrated.
+Home, Map, Explorer and Details. Authentication and gated Sources use the API base
+independently; verification, conflict and audit pages are not integrated.
 
 The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
@@ -513,3 +513,109 @@ Manual verification once a browser and confirmed test backend are available:
    late responses must never restore a terminated session.
 5. Check Home, Explorer, Details and Map mock navigation before/after login, and
    verify that API village mode remains blocked with zero village API requests.
+
+## Sources management and village source linking (role contract blocked)
+
+Fetched remote refs on `roaa/frontend-integration` at `93669e7`; there were no
+incoming `origin/main` changes. Reviewed `SourceController`,
+`VillageSourceController`, their services/entities, source DTOs and enum,
+`DataQualityExceptionHandler`, global handlers and the security configuration.
+`/auth/me` still returns only username, without effective roles.
+
+**Every Sources read is role-dependent.** Controller and service rules require
+VIEWER/EDITOR/ADMIN for all four GET contracts and EDITOR/ADMIN for mutations.
+There is no Sources endpoint explicitly permitting every authenticated user.
+Consequently, the actual app makes **zero Sources requests**, including catalog
+and link reads. `/sources` uses `RequireAuth`, then shows an explicit unavailable
+state instead of an empty catalog or fabricated records. The authenticated Navbar
+links to this protected route; Login preserves safe `/sources?source=ID` returns.
+
+`sourceAccess.js` keeps `effectiveSourceRolesVerified` false independently of the
+village publication gate. There is no environment switch or demo role/session.
+Unexpected role properties, usernames and JWT decoding cannot enable access.
+Future enablement requires a reviewed effective-role DTO, corresponding auth
+mapping/guard updates, and explicit source-policy review. Isolated automated tests
+inject verified-role fixtures into factories to exercise the verified endpoint
+contracts; those fixtures never enable the application singleton or create users.
+Frontend permissions control UI behavior; backend authorization is authoritative.
+
+`sourcesService.js` uses AuthProvider's scoped request method and the unchanged
+API client. Verified paths (relative to the existing `/api/v1` base):
+
+| Method/path | Request / response |
+| --- | --- |
+| GET `/sources` | `SourceResponse[]`, no search or pagination parameters |
+| GET `/sources/{id}` | One `SourceResponse` |
+| POST `/sources` | `CreateSourceRequest`; 201 with `SourceResponse` |
+| PUT `/sources/{id}` | Full `CreateSourceRequest` replacement; `SourceResponse` |
+| GET `/villages/{villageId}/sources` | `VillageSourceResponse[]` |
+| POST `/villages/{villageId}/sources` | `{sourceId, claimNote}`; 201 with `VillageSourceResponse` |
+| GET `/sources/{sourceId}/villages` | `VillageSourceResponse[]` |
+
+`CreateSourceRequest` contains exactly `title`, `publisher`, `author`, `sourceType`,
+`url`, `publicationDate`, `accessedAt`, and `citation`. Title is NotBlank, maximum
+350 UTF-16 code units; publisher/author are nullable, maximum 200. Source types
+are CENSUS, GOVERNMENT, BOOK, ARTICLE, ARCHIVE, WEBSITE, INTERVIEW and OTHER.
+URL is nullable and must satisfy backend HTTP(S) URL validation. Dates are nullable
+Java LocalDate strings, including canonical signed historical years. Citation and
+claim note have no invented text-length constraint. Server validation remains
+authoritative. Responses additionally preserve numeric source ID and nullable
+`createdAt` OffsetDateTime text. No verification status or missing metadata is
+invented. URLs and free text are rendered as text, without HTML or automatic fetches.
+
+Adapters preserve null, empty text, whitespace, exact dates/timestamps and notes.
+They reject malformed envelopes, unknown enums, unsafe IDs, duplicate catalog
+IDs/links and wrong-identity responses. Explicit nullable fields are required in
+full source responses; missing fields cannot become accidental PUT clears.
+Update bodies merge only deliberately changed form fields over a complete,
+validated detail baseline, preserving every untouched optional field. Clearing a
+field sends explicit null. IDs and creation timestamps are never PUT fields.
+The backend has no exposed version/ETag concurrency contract, so this preserves
+the loaded baseline, without guaranteeing protection against concurrent editors.
+
+Reusable source details/forms, village-source listing/link selection and reverse
+source-village listing use the actual DTOs. Numeric route IDs must be canonical
+positive safe integers; request bodies use numeric IDs. Village-specific panels
+require a real matching village ID and an available API integration. Mock slugs
+are rejected, and no arbitrary village-ID input or invented village names are
+provided. Reverse links show IDs and notes; navigation to public Details remains
+unavailable while its API integration is gated. Public village pages are unchanged.
+
+Reads have separate loading, empty, forbidden, not-found and network-error states.
+HTTP 400/401/403/404/409 and network semantics remain intact. A current-session 401
+clears authentication through the existing session layer; 403 remains a permission
+failure. A duplicate link 409 leaves the entered and existing information intact
+and never triggers a PUT or overwrite. Mutations have submission latches, disable
+form controls while pending and are never automatically retried. An uncertain
+network/write result advises checking data before manually submitting again;
+transport cancellation cannot roll back a server operation already committed.
+
+AuthProvider exposes its existing read-only public snapshot getter for scope
+checks, without exposing tokens. Each Sources service is bound to the verified
+profile object and expiration; logout, expiry, replacement sessions or profile
+changes invalidate old services. Existing read cancellation/stale-response handling
+is reused, and mutation callbacks are suppressed after cancellation or scope
+changes. Tokens remain in memory and are never logged or persistently stored.
+
+Interactive browser verification was attempted for Sources but the computer-use
+native pipe was unavailable. Interactive layout, forms and navigation remain
+unverified. Backend routing/CORS is still unconfirmed; live authentication and
+Sources verification remain unavailable. No backend/PostgreSQL was started and
+no real source/link records were created. The shared village publication gate
+remains closed and public mock browsing remains the default. No deletion,
+unlinking, search, pagination, Verification Records, Data Conflicts or Audit Logs
+feature is added.
+
+Manual checks once browser/routing are available: verify anonymous `/sources`
+redirect and safe login return, keyboard/RTL behavior, authenticated unavailable
+notice with zero Sources requests, logout/navigation cleanup and unchanged public
+mock browsing. Live catalog/forms/link checks require the effective-role contract
+and real-village integrations to be reviewed first; do not bypass the gates.
+
+Validation for this step: all 583 dependency-free tests passed (68 added), along
+with `npm run build`, `npm run lint`, `git diff --check` and whitespace checks of
+all new files. Coverage includes exact HTTP contracts/Bearer headers, optional-field
+preservation, validation/IDs, role restrictions and zero-request missing-role
+behavior, conflicts, errors, cancellation, logout/session changes, stale success
+and failure, duplicate submissions, safe login returns and existing mock regression.
+These automated checks do not establish interactive browser or live backend coverage.

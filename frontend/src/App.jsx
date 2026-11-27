@@ -8,8 +8,11 @@ import VillageExplorer from './pages/VillageExplorer.jsx'
 import VillageDetails from './pages/VillageDetails.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import { AuthProvider } from './auth/AuthProvider.jsx'
+import { RequireAuth } from './auth/RequireAuth.jsx'
+import SourcesPage from './pages/SourcesPage.jsx'
 import './styles/site.css'
 import './styles/auth.css'
+import './styles/sources.css'
 
 const MapPage = lazy(() => import('./pages/MapPage.jsx'))
 
@@ -19,6 +22,7 @@ const pageTitles = [
   ['/villages/:id', 'تفاصيل القرية'],
   ['/map', 'خريطة القرى'],
   ['/login', 'تسجيل الدخول'],
+  ['/sources', 'المصادر'],
 ]
 
 function Layout() {
@@ -46,6 +50,7 @@ function Layout() {
             <Route path="/villages/:id" element={<VillageDetails />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/sources" element={<RequireAuth><SourcesPage /></RequireAuth>} />
             <Route path="*" element={<PageState title="الصفحة غير موجودة"><Link className="button primary" to="/">العودة إلى الرئيسية</Link></PageState>} />
           </Routes>
         </Suspense>

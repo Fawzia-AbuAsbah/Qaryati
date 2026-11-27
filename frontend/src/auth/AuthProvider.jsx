@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
   }, [store])
   const value = useMemo(() => ({
     ...snapshot, login: store.login, logout: store.logout, cancelLogin: store.cancelLogin,
-    refreshProfile: store.refreshProfile, request: store.request,
+    refreshProfile: store.refreshProfile, request: store.request, getSnapshot: store.getSnapshot,
   }), [snapshot, store])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
