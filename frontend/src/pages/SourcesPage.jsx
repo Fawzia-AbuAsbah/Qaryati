@@ -7,7 +7,6 @@ import SourceState from '../components/sources/SourceState.jsx'
 import SourceForm from '../components/sources/SourceForm.jsx'
 import SourceDetails from '../components/sources/SourceDetails.jsx'
 import SourceVillages from '../components/sources/SourceVillages.jsx'
-import VillageSourcesPanel from '../components/sources/VillageSourcesPanel.jsx'
 import { sourceErrorMessage } from '../services/sourceContracts.js'
 
 export default function SourcesPage() {
@@ -51,7 +50,7 @@ function SourcesWorkspace({ service }) {
     {invalidId ? <p className="source-error" role="alert">معرّف المصدر غير صالح.</p>
       : sourceId ? <SelectedSource key={sourceId} service={service} sourceId={sourceId} onSaved={() => { catalog.retry(); setSaved(true) }} />
         : <p className="source-notice">اختر مصدرًا لعرض التفاصيل والقرى المرتبطة به.</p>}
-    <VillageSourcesPanel service={service} />
+    <p className="source-notice">لربط مصدر بقرية، استخدم قسم مصادر القرية في تفاصيل قرية حقيقية عند توفر تكامل القرى.</p>
   </>
 }
 

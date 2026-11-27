@@ -6,6 +6,88 @@ API mode. Mock Map and Details retain their existing renderers; mock Home keeps
 its original featured villages, hero and navigation.
 Starting the frontend does not start the backend or connect to PostgreSQL.
 
+## Phase 5.5: Village Source Linking wiring
+
+Baseline: `b33e914` on `roaa/frontend-final-integration`. Rechecked source/link
+controllers, DTOs, service authorization, repository insertion behavior, exception
+handlers, security configuration, MVC/service tests and the merged integration
+contract. No backend execution or database access was performed.
+
+Existing protected contracts, relative to `/api/v1`:
+
+| Endpoint | Response / input | Permission |
+| --- | --- | --- |
+| GET `/villages/{villageId}/sources` | Unpaged `{villageId, sourceId, claimNote}[]` | VIEWER, EDITOR, ADMIN |
+| POST `/villages/{villageId}/sources` | `{sourceId, claimNote}` -> 201 association object | EDITOR, ADMIN |
+| GET `/sources/{sourceId}/villages` | Unpaged association array | VIEWER, EDITOR, ADMIN |
+| GET `/sources` | Unpaged SourceResponse array; no HTTP search/type filters | VIEWER, EDITOR, ADMIN |
+| GET `/sources/{id}` | SourceResponse; 404 if missing | VIEWER, EDITOR, ADMIN |
+
+SourceResponse fields remain `id`, `title`, `publisher`, `author`, `sourceType`,
+`url`, `publicationDate`, `accessedAt`, `citation`, `createdAt`. Link path IDs and
+sourceId must be positive. The frontend additionally requires canonical positive
+decimal route strings and JavaScript-safe numeric wire IDs. `claimNote` is optional
+nullable text with no backend length limit; whitespace and nonempty notes are
+preserved exactly. The form maps an empty note to null. No actor, status or
+timestamp is supplied by the browser.
+
+Link creation checks Village/Source existence and returns 404 when either is
+missing. It checks duplicates and uses atomic insert-if-absent; 409 never replaces
+an existing note. Positive unknown link lookup IDs can return `[]`, without a
+parent-existence check. These reads do not establish public Village eligibility.
+Data Quality handled errors use `{error:string}` for 400/404/409; security 401/403
+and other infrastructure bodies remain defensive API-client cases.
+
+`ApiVillageDetails` now mounts the existing `VillageSourcesPanel` with the loaded
+`village` and `villageDetailsService` descriptor. The panel obtains the existing
+AuthProvider-scoped Sources service through `useSourcesService`; it never accepts
+manual Village IDs or fabricates a village identity. SourcesPage's identity-less
+panel mount is removed and replaced with guidance to the real-village context.
+The panel first checks matching safe identity and an available API integration,
+then current read permission. Anonymous, empty/invalid roles, stale roles, expired
+sessions and failed role refreshes initiate no protected source requests.
+
+`villageSourcesState.js` keeps independent link-list, catalogue and mutation
+states. It reuses the existing latest-request and single-mutation controllers.
+VIEWER gets associations and source titles without a disabled linking form.
+EDITOR/ADMIN can select an existing, currently unlinked source and submit an
+optional note. Loading/error states and an empty/all-linked catalogue do not
+offer an unusable form. Known associations cannot be resubmitted; concurrent
+server duplicates remain 409 errors, preserving the draft and existing notes.
+Manual list/catalogue refreshes issue GET only. No mutation retries automatically.
+
+A confirmed link remains successful independently of the following list refresh.
+If that GET fails, the UI keeps the returned association/note and explicitly says
+the link succeeded but list refresh failed. Its retry issues only GET, never POST.
+Navigation/unmount cancels reads and writes; old Village/session responses are
+discarded. State is redacted when role checks fail or the service becomes stale.
+Cancellation cannot undo an operation already committed by the backend.
+
+Reverse source associations show editorial Village IDs and escaped claim notes,
+with an explicit notice that an association does not establish public visibility.
+They do not link IDs into mock Details or imply a public detail route exists.
+No unlink/delete operation, new API, proxy, public endpoint migration, additional
+Village section, dependency or backend change is introduced.
+
+**Reachability remains deliberately blocked:** the shipped public Village
+capability is still false and the default mode is still mock. Mock Details does
+not mount this panel. The real-village wiring is prepared and tested, but users
+cannot reach its linking form until real Village Details integration is separately
+approved. Sources Management and its permitted reverse-association reads continue
+to work independently of that future Village phase, subject to routing/CORS.
+
+Validation: 868 tests passed (79 added), production build, ESLint and
+`git diff --check` passed. Actual JSX is rendered with installed React/Vite in an
+isolated middleware module graph with no HTTP listener; fixture Village data and
+integration descriptors verify actual component mounting/props without changing
+the shipped gate. State/service tests use simulated Fetch only and cover role
+checks, identities, selection, exact notes, duplicate submissions/conflicts,
+refresh failures, cancellation, Village changes, logout and late responses.
+These are not interactive browser tests. Browser checks could not run because
+the browser access host is unavailable. Live backend behavior remains unverified.
+The earlier phase notes below describe their delivery snapshots; this phase
+supersedes the earlier deferred linking-wiring limitation only.
+
 ## Phase 5.4: effective roles and RBAC
 
 Baseline: `roaa/frontend-final-integration` at `4e2d137`, containing PRs #36 and
