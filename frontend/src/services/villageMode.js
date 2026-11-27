@@ -1,6 +1,10 @@
-// Shared release gate. Environment configuration cannot approve publication rules.
-// Covers Home, Map, Explorer, village identity, governorates and heritage reads.
-export const publicVillageContractsVerified = false
+// Independently reviewed contracts. Mode selection cannot approve missing APIs.
+export const publicVillageCapabilities = Object.freeze({
+  browsing: true,
+  identity: true,
+  geographicCatalogues: false,
+  richSections: false,
+})
 export const villageDataMode = import.meta.env?.VITE_VILLAGE_EXPLORER_MODE?.trim() || 'mock'
 
 export class VillageAccessError extends Error {
@@ -11,13 +15,13 @@ export class VillageAccessError extends Error {
   }
 }
 
-export function createVillageAccess({ mode = 'mock', publicationVerified = publicVillageContractsVerified } = {}) {
+export function createVillageAccess({ mode = 'mock', contractVerified = false } = {}) {
   return {
     mode,
-    available: mode === 'mock' || (mode === 'api' && publicationVerified === true),
+    available: mode === 'mock' || (mode === 'api' && contractVerified === true),
     requireApi() {
       if (mode !== 'api') throw new VillageAccessError('INVALID_MODE')
-      if (publicationVerified !== true) throw new VillageAccessError('PUBLIC_CONTRACTS_UNCONFIRMED')
+      if (contractVerified !== true) throw new VillageAccessError('PUBLIC_CONTRACTS_UNCONFIRMED')
     },
   }
 }

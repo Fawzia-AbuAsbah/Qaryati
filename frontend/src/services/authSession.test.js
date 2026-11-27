@@ -5,7 +5,7 @@ import { createAuthService } from './authService.js'
 import { createAuthSession } from './authSession.js'
 import { createVillageExplorerService } from './villageExplorerService.js'
 import { createVillageHomeService } from './villageHomeService.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 
 const credentials = { username: 'reader', password: 'sample-password' }
 const response = (dto, status = 200, headers) => new Response(JSON.stringify(dto), { status, headers })
@@ -33,7 +33,7 @@ function fixture(t, handler) {
   const time = clock(), calls = []
   const fetchImpl = async (url, init) => {
     calls.push({ url, init })
-    return handler ? handler(url, init, calls.length) : response(url.endsWith('/login') ? loginDto : { username: 'verified-name' })
+    return handler ? handler(url, init, calls.length) : response(url.endsWith('/login') ? loginDto : { username: 'verified-name', roles: [] })
   }
   const store = createAuthSession({ service: createAuthService({ request: createApiClient({ fetchImpl }) }), ...time })
   t.after(() => store.dispose())
@@ -48,7 +48,7 @@ test('anonymous startup makes no requests; a session requires the verified profi
   assert.equal(calls.length, 0)
   assert.equal(time.timers.size, 0)
   const user = await store.login(credentials)
-  assert.deepEqual(user, { username: 'verified-name', roles: null, rolesVerified: false })
+  assert.deepEqual(user, { username: 'verified-name', roles: [], rolesVerified: true })
   assert.equal(store.getSnapshot().status, 'authenticated')
   assert.equal(store.getSnapshot().expiresAt, 130000)
   assert.equal(time.timers.size, 1)
@@ -342,11 +342,11 @@ test('logout aborts protected requests; dispose cleans timers and can be reused 
 
 test('authentication is independent of publication approval and preserves default mock browsing', async t => {
   const { store, calls } = fixture(t)
-  const forbiddenRequest = () => { assert.fail('The closed village gate must prevent every API request') }
-  assert.equal(publicVillageContractsVerified, false)
+  const forbiddenRequest = () => { assert.fail('An explicitly disabled browsing capability must prevent every API request') }
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
-  await store.login(credentials) // Auth requests work while public village requests remain closed.
-  const apiVillages = createVillageExplorerService({ mode: 'api', request: forbiddenRequest })
+  await store.login(credentials) // Auth and a disabled public capability remain independent.
+  const apiVillages = createVillageExplorerService({ mode: 'api', browsingVerified: false, request: forbiddenRequest })
   await assert.rejects(apiVillages.listVillages(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   await assert.rejects(apiVillages.listGovernorates(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   const mockVillages = createVillageExplorerService({ request: forbiddenRequest })

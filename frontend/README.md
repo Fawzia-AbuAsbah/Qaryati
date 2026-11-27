@@ -1,10 +1,276 @@
 # Qaryati frontend
 
 The React/Vite app defaults to the existing mock data through
-`src/services/villageService.js`. Home, Map, Explorer and Details share a gated
-API mode. Mock Map and Details retain their existing renderers; mock Home keeps
+`src/services/villageService.js`. Home, Map, Explorer and Details share a mode,
+with independent public capabilities described in the Phase 5.6 section below.
+Mock Map and Details retain their existing renderers; mock Home keeps
 its original featured villages, hero and navigation.
 Starting the frontend does not start the backend or connect to PostgreSQL.
+
+## Phase 5.8: Vite API proxy
+
+Baseline: `b5641d1` on `roaa/frontend-final-integration`, initially clean with
+988 passing tests. Fetching remote refs found no incoming `origin/main` changes;
+it remains `4e2d137`. The checked-out application has no `server.port` override,
+the Dockerfile exposes 8080, and the root README identifies 8080 as the usual
+native port. Compose explicitly maps `127.0.0.1:8081` to container port 8080.
+Public controllers and the API client retain the `/api/v1` prefix. No backend,
+Compose, database, CORS or security configuration was changed or executed.
+
+Development and preview now share the proxy described under API configuration
+below. Transport tests use temporary loopback HTTP fixtures on dynamic ports;
+they never contact the real backend on 8080 or 8081. They exercise both actual
+Vite server variants, public/authenticated requests, JSON POST/PUT/PATCH,
+Arabic/reserved query values, exact paths, headers, statuses, Retry-After and
+unavailable upstreams. These fixtures test HTTP forwarding, not backend business
+rules, browser CORS, login with real accounts or real database behavior.
+
+Validation: 1,043 tests pass, including 55 new proxy/configuration checks. Build,
+lint and whitespace checks pass. Both Vite fixture servers and their synthetic
+upstreams stop after testing. Cleanup attempts every resource even if a preceding
+cleanup step fails; a synthetic failure regression checks actual server closure
+and preview-file removal. No requests are sent to real backend ports, and
+no backend or PostgreSQL is started. Secure interactive browser checks remain
+unavailable from the preceding phase and were not repeated with security
+overrides. Real backend integration, browser/CORS behavior and production reverse
+proxy deployment still require separate validation.
+
+## Phase 5.7: Public Home and Map integration
+
+Baseline: `59fcf8c` on `roaa/frontend-final-integration`, initially clean with
+943 passing tests. Fetching remote refs found no incoming changes;
+`origin/main` remains `4e2d137`. Implementation uses the checked-out public
+Village controller/DTO/service/security contracts and integration documentation.
+Public catalogues and rich sections remain unavailable. Mock remains the default.
+
+Home keeps its existing hero, navigation and mock featured selection. API Home
+search submits only the encoded `q` UI parameter to `/villages`; Explorer maps it
+to the backend `search` parameter on `/api/v1/public/villages`. Arabic, English,
+reserved characters, empty searches and backend Java whitespace semantics are
+covered. Home and Explorer share the public search normalizer and 180 UTF-16-unit
+limit; mock normalization remains unchanged. The input supports automatic text
+direction and accessible validation feedback. API featured content remains
+unavailable, with no request, arbitrary selection or mock substitution. Home
+displays no village statistics, so no simulated count is presented as real data.
+
+Map retains the existing Leaflet design and public all-page retrieval service:
+GET `/api/v1/public/villages`, ID ascending, default page size 100, maximum 100
+pages and 10,000 records. The backend supplies only VERIFIED, non-archived rows.
+Every page uses the public DTO adapter and exact pagination validation; duplicate
+IDs, order/count changes, malformed data, failed pages and exceeded limits fail
+the entire load. Retry starts a fresh traversal. Partial collections never become
+complete maps. Offset pagination still provides no database snapshot guarantee.
+Public requests use the plain client without Bearer headers or cookies, including
+while an account is authenticated. No protected catalogues or rich sections are
+requested, and no geographic names or images are inferred from mock data.
+
+The Map render boundary accepts only finite two-element `[latitude, longitude]`
+pairs within geographic ranges. Real zero coordinates remain valid. Invalid API
+axes fail the adapter; missing pairs retain their villages in the index without
+markers. Counts distinguish all public villages from valid markers, including
+empty datasets. No-marker datasets never mount Leaflet; one marker gets an
+explicit bounded point view; multiple markers fit their actual bounds. Selecting
+a known marker centers it, and reset fits all valid locations. Resizing invalidates
+Leaflet's cached size through ResizeObserver, with normal Leaflet window-resize
+handling available when the observer is unsupported.
+
+The API index provides native buttons for selecting markers and clearing the
+selection, preserving unrelated/repeated URL parameters without reloading the
+dataset. Numeric Details links remain available independently of marker presence.
+Markers and the map retain keyboard handling, Arabic instructions and zoom labels;
+the index provides an alternative to popup navigation. Popups use React text and
+actual numeric IDs. Reset closes the old selected popup. Long popup/index content
+wraps within the existing responsive design, and focus remains visible inside the
+map frame. OpenStreetMap copyright attribution remains visible and linked.
+
+Village API loading/failure/retry states are separate from tile loading/failure.
+Tile errors keep validated village data and navigation available; their retry
+redraws only the tile layer and never reloads Village data. There are no mutation
+retries or API-to-mock fallback paths.
+
+Validation: 988 tests pass (45 added), with successful build, lint and whitespace
+checks. Coverage includes real Home-to-Explorer service handoff, public transport
+isolation across login/logout, multi-page retrieval/limits/errors/cancellation,
+stale success/failure, coordinate order/zero/invalid pairs, bounds, selection URLs,
+counts and mock regression. Actual Home/Map JSX renders are exercised using
+installed React/Vite with only data hooks and DOM-dependent Leaflet bindings
+replaced. Those tests check the props reaching map/markers, safe popup content,
+Details links, keyboard labels/controls, attribution and loading/empty/error states;
+they do not execute Leaflet in a real browser or establish interactive behavior.
+
+Secure browser checks were attempted without disabling security protections.
+Headless Edge started but its renderer timed out with sandboxing enabled. The
+browser access host was unavailable; native Chrome access timed out waiting for
+app approval. Consequently Phase 5.7 has no completed interactive, responsive
+viewport or keyboard browser checks. Temporary frontend-only HTTP fixtures were
+stopped without contacting a backend or database. The historical 12 Phase 5.6
+simulated browser scenarios below were not rerun and are not Phase 5.7 validation.
+Live backend/CORS, real tiles, focus/keyboard interaction, resize/RTL/mobile layout
+and live dataset/coordinate quality remain unverified. No dependencies, backend,
+proxy, default-mode or publication-policy configuration was changed.
+
+Earlier phase reports below describe their historical gates and validation.
+Phase 5.6 supersedes the old shared closed gate for basic public browsing/identity.
+
+## Phase 5.5: Village Source Linking wiring
+
+Baseline: `b33e914` on `roaa/frontend-final-integration`. Rechecked source/link
+controllers, DTOs, service authorization, repository insertion behavior, exception
+handlers, security configuration, MVC/service tests and the merged integration
+contract. No backend execution or database access was performed.
+
+Existing protected contracts, relative to `/api/v1`:
+
+| Endpoint | Response / input | Permission |
+| --- | --- | --- |
+| GET `/villages/{villageId}/sources` | Unpaged `{villageId, sourceId, claimNote}[]` | VIEWER, EDITOR, ADMIN |
+| POST `/villages/{villageId}/sources` | `{sourceId, claimNote}` -> 201 association object | EDITOR, ADMIN |
+| GET `/sources/{sourceId}/villages` | Unpaged association array | VIEWER, EDITOR, ADMIN |
+| GET `/sources` | Unpaged SourceResponse array; no HTTP search/type filters | VIEWER, EDITOR, ADMIN |
+| GET `/sources/{id}` | SourceResponse; 404 if missing | VIEWER, EDITOR, ADMIN |
+
+SourceResponse fields remain `id`, `title`, `publisher`, `author`, `sourceType`,
+`url`, `publicationDate`, `accessedAt`, `citation`, `createdAt`. Link path IDs and
+sourceId must be positive. The frontend additionally requires canonical positive
+decimal route strings and JavaScript-safe numeric wire IDs. `claimNote` is optional
+nullable text with no backend length limit; whitespace and nonempty notes are
+preserved exactly. The form maps an empty note to null. No actor, status or
+timestamp is supplied by the browser.
+
+Link creation checks Village/Source existence and returns 404 when either is
+missing. It checks duplicates and uses atomic insert-if-absent; 409 never replaces
+an existing note. Positive unknown link lookup IDs can return `[]`, without a
+parent-existence check. These reads do not establish public Village eligibility.
+Data Quality handled errors use `{error:string}` for 400/404/409; security 401/403
+and other infrastructure bodies remain defensive API-client cases.
+
+`ApiVillageDetails` now mounts the existing `VillageSourcesPanel` with the loaded
+`village` and `villageDetailsService` descriptor. The panel obtains the existing
+AuthProvider-scoped Sources service through `useSourcesService`; it never accepts
+manual Village IDs or fabricates a village identity. SourcesPage's identity-less
+panel mount is removed and replaced with guidance to the real-village context.
+The panel first checks matching safe identity and an available API integration,
+then current read permission. Anonymous, empty/invalid roles, stale roles, expired
+sessions and failed role refreshes initiate no protected source requests.
+
+`villageSourcesState.js` keeps independent link-list, catalogue and mutation
+states. It reuses the existing latest-request and single-mutation controllers.
+VIEWER gets associations and source titles without a disabled linking form.
+EDITOR/ADMIN can select an existing, currently unlinked source and submit an
+optional note. Loading/error states and an empty/all-linked catalogue do not
+offer an unusable form. Known associations cannot be resubmitted; concurrent
+server duplicates remain 409 errors, preserving the draft and existing notes.
+Manual list/catalogue refreshes issue GET only. No mutation retries automatically.
+
+A confirmed link remains successful independently of the following list refresh.
+If that GET fails, the UI keeps the returned association/note and explicitly says
+the link succeeded but list refresh failed. Its retry issues only GET, never POST.
+Navigation/unmount cancels reads and writes; old Village/session responses are
+discarded. State is redacted when role checks fail or the service becomes stale.
+Cancellation cannot undo an operation already committed by the backend.
+
+Reverse source associations show editorial Village IDs and escaped claim notes,
+with an explicit notice that an association does not establish public visibility.
+They do not link IDs into mock Details or imply a public detail route exists.
+No unlink/delete operation, new API, proxy, public endpoint migration, additional
+Village section, dependency or backend change is introduced.
+
+**Reachability remains deliberately blocked:** the shipped public Village
+capability is still false and the default mode is still mock. Mock Details does
+not mount this panel. The real-village wiring is prepared and tested, but users
+cannot reach its linking form until real Village Details integration is separately
+approved. Sources Management and its permitted reverse-association reads continue
+to work independently of that future Village phase, subject to routing/CORS.
+
+Validation: 868 tests passed (79 added), production build, ESLint and
+`git diff --check` passed. Actual JSX is rendered with installed React/Vite in an
+isolated middleware module graph with no HTTP listener; fixture Village data and
+integration descriptors verify actual component mounting/props without changing
+the shipped gate. State/service tests use simulated Fetch only and cover role
+checks, identities, selection, exact notes, duplicate submissions/conflicts,
+refresh failures, cancellation, Village changes, logout and late responses.
+These are not interactive browser tests. Browser checks could not run because
+the browser access host is unavailable. Live backend behavior remains unverified.
+The earlier phase notes below describe their delivery snapshots; this phase
+supersedes the earlier deferred linking-wiring limitation only.
+
+## Phase 5.4: effective roles and RBAC
+
+Baseline: `roaa/frontend-final-integration` at `4e2d137`, containing PRs #36 and
+#37. Rechecked `LoginController`, `JwtAuthenticationConverterConfig`,
+`DatabaseUserDetailsService`, `LoginControllerTest` and
+`docs/integration/FRONTEND_BACKEND_CONTRACTS.md`. `/auth/me` returns
+`{username, roles}` with exact role names VIEWER, EDITOR and ADMIN. The server
+uses current database-backed authorities, removes the ROLE_ prefix, deduplicates
+and sorts recognized roles. JWT claims, usernames and browser storage are never
+permission sources. Backend authorization remains authoritative on every request.
+
+`authService.js` validates the complete roles array, copies it and freezes both
+the array and profile. Multiple roles and `[]` are preserved; no default role is
+assigned. Missing, malformed or unknown role data, including an ADMIN mixed with
+an unknown role, yields `roles: null, rolesVerified: false`. The authenticated
+identity can still use the backend's authentication-only reads, but every
+role-dependent operation fails closed. Invalid usernames still reject the profile.
+
+`authRoles.js` enables only the effective-role capability. The existing
+`effectiveSourceRolesVerified` export aliases it for the Member 3 services.
+The public Village gate remains false and mock browsing remains the default.
+No dependencies, backend files, API paths, proxy, village sections or linking
+wiring are changed by this phase.
+
+| Operation | Explicit permission |
+| --- | --- |
+| Sources and source-link reads | VIEWER, EDITOR or ADMIN |
+| Source create/update and link creation | EDITOR or ADMIN |
+| Verification history and village conflict reads | Any authenticated account, including empty/unverified roles |
+| Verification decision | ADMIN |
+| Conflict creation and status lists | EDITOR or ADMIN |
+| Conflict review/resolve | ADMIN |
+| Audit reads | ADMIN |
+
+Generic guards use an OR allowlist with no implicit inheritance: an ADMIN-only
+profile does not satisfy a VIEWER-only requirement. `memberRoutes` shares explicit
+route policies between App and Navbar. Insufficient roles show a forbidden state;
+unverified roles show an unavailable state; anonymous/expired sessions go to Login.
+Page/service permission checks remain in place and block insufficient requests.
+
+Roles are a snapshot from login or the existing `refreshProfile` operation.
+Navbar's **تحديث الصلاحيات** action explicitly reloads `/auth/me`; there is no
+polling or JWT/token refresh. During the check, role-dependent navigation/actions
+are suspended, while authentication-only reads remain permitted. Successful
+refresh replaces the immutable profile, invalidating old Member 3 services and
+their late responses. Invalid role data replaces previous grants with unverified
+roles. Logout, expiry, cancellation and generation/stale-response protections are
+unchanged. A current-session 401 clears authentication. A 403 or network refresh
+failure retains identity and the previous immutable profile with an explicit
+error, but marks the snapshot `rolesStale: true`. Route/service checks block all
+role-dependent operations until a refresh succeeds; authenticated-only reads
+remain permitted. Navbar explicitly labels this stale state. A cancelled retry
+cannot restore stale grants. `rolesVerified` describes the profile's role-data
+validity, not freshness; `rolesStale` separately tracks failed revalidation and is
+cleared only by successful profile verification or session termination. A backend
+role change can still produce 403 before the user refreshes the UI. No forbidden
+operation is automatically retried. This freshness check was added during the
+final pre-commit review, preserving expiration and generation protections.
+
+Service-level Village Source Linking permissions are enabled, but its UI wiring
+is deliberately deferred. Verification/conflict village panels still require a
+real village identity and the closed Village integration gate. No editorial data
+is introduced into mock/public browsing. Live routing/CORS and real backend
+validation remain outstanding. The module delivery notes below contain historical
+validation totals; Phase 5.4 supersedes their earlier role-contract blockers.
+
+Phase 5.4 tests use simulated Fetch responses only. They exercise all eight role
+combinations, malformed role data, route policies, all Member 3 operations,
+immutable profiles, refresh/revocation, insufficient-request prevention,
+401/403, logout, expiry, session replacement and unchanged mock browsing.
+Interactive browser checks could not run: the browser access host is unavailable
+and the installed Playwright modules fail to load. No backend, database or
+frontend server was started for this phase.
+
+Validation: 789 tests passed (50 added); production build, ESLint and
+`git diff --check` passed. These results do not establish live backend or
+interactive browser compatibility.
 
 ## Commands
 
@@ -15,36 +281,97 @@ npm run dev
 npm test
 npm run build
 npm run lint
+npm run preview
 ```
 
-Tests use Node's built-in test runner, assertions, pure DTO fixtures and mocked Fetch responses.
-Use the existing Node.js 24 runtime; no test dependency or live API is needed.
+Tests use Node's built-in runner, DTO fixtures, simulated Fetch responses and
+temporary loopback HTTP/Vite servers. Use the existing Node.js 24 runtime; no
+test dependency or live backend is needed. Proxy fixtures use dynamically assigned
+ports, close all servers/connections and remove their temporary preview directory.
 
 ## API base configuration and routing
 
-`src/services/apiClient.js` reads `import.meta.env.VITE_API_BASE_URL`. The default
-is `/api/v1`. Copy `.env.example` to the Git-ignored `.env.local` to override it,
-then restart Vite. Production changes require rebuilding because Vite environment
-values are embedded at build time. All `VITE_*` configuration is public; put no
-tokens, passwords, signing keys or database credentials in it.
+`src/services/apiClient.js` reads `import.meta.env.VITE_API_BASE_URL`, defaulting
+to `/api/v1`. Mock browsing remains the default; switching on the proxy does not
+switch the data mode or enable catalogue/rich-section capabilities. Authentication
+and protected Member 3 modules use the configured API base independently of the
+browsing mode, retaining their session/RBAC checks. API errors never select mock
+data as a fallback.
 
-The base includes the version prefix. Supply endpoint paths such as `/villages`,
-not `/api/v1/villages`. A base can be an origin-relative path or an absolute
+The base includes the version prefix. Supply paths such as `/public/villages`,
+not `/api/v1/public/villages`. A base can be an origin-relative path or an absolute
 HTTP(S) URL, with optional trailing slash. Base queries, fragments and embedded
 credentials are rejected. Endpoints cannot override or traverse outside the base.
 
-- **Development:** Vite currently has no API proxy. `/api/v1` would reach Vite's
-  own origin until a proxy is configured against the team's confirmed backend
-  address. Alternatively, an explicitly configured absolute API base requires
-  backend CORS support for the frontend origin. Neither the backend address nor
-  CORS/public-read changes are assumed or configured in this step. Mock village
-  browsing makes no API requests; explicit login uses the configured API base
-  independently of the village mode.
-- **Production:** the intended default is same-origin routing: the web server
-  sends `/api/v1/*` to the backend and serves the frontend at other application
-  paths. API paths must be excluded from the SPA HTML fallback. A separately
-  hosted API needs an explicit build-time base URL and team-approved CORS rules.
-  Deployment routing remains infrastructure work.
+Both `server.proxy` and `preview.proxy` forward `/api/v1` and its descendants,
+including query parameters, to `DEV_API_PROXY_TARGET`. The default target is
+`http://127.0.0.1:8080`; the confirmed Docker alternative is
+`http://127.0.0.1:8081`. Do not append `/api/v1` to the target. Targets must be
+absolute HTTP(S) origins, with no credentials, base path, query or fragment;
+invalid values stop Vite with a configuration error that omits the supplied value.
+
+`vite.config.js` uses `loadEnv(mode, frontendDirectory, 'DEV_')`; Vite's client
+environment prefix remains `VITE_`. `DEV_API_PROXY_TARGET` is server-side only
+and is not exposed through `import.meta.env` or bundled into client JavaScript.
+Both servers bind to `127.0.0.1`. `changeOrigin: true` changes the upstream Host
+header; API paths are not rewritten. Methods, JSON bodies, Authorization supplied
+by the client, response status/content headers and Retry-After are forwarded.
+The proxy injects no authentication and does not retry requests. Public clients
+continue to omit Bearer tokens and cookies. HTTPS targets retain certificate
+verification. Default proxy connection-error logs omit request queries, headers,
+bodies and upstream error stacks; no request-body logger is added.
+
+For the unchanged mock default, run `npm run dev` from `frontend/`. The normal
+development URL is `http://127.0.0.1:5173` (use the URL printed by Vite if occupied).
+To explicitly use the public APIs with a native backend, set these variables in
+the same PowerShell session before starting Vite:
+
+```powershell
+$env:VITE_API_BASE_URL = '/api/v1'
+$env:VITE_VILLAGE_EXPLORER_MODE = 'api'
+$env:DEV_API_PROXY_TARGET = 'http://127.0.0.1:8080'
+npm run dev
+```
+
+For the checked-out Docker Compose backend, use the same API settings with:
+
+```powershell
+$env:DEV_API_PROXY_TARGET = 'http://127.0.0.1:8081'
+npm run dev
+```
+
+To preview an API-mode build, keep the desired settings above and run:
+
+```powershell
+npm run build
+npm run preview
+```
+
+Preview normally serves `http://127.0.0.1:4173`. `VITE_*` settings are embedded
+at build time: changing the browsing mode or API base for preview requires a new
+build. Changing only `DEV_API_PROXY_TARGET` requires restarting dev/preview,
+without rebuilding the client. Vite loads frontend `.env`/`.env.local` and
+mode-specific variants as usual, with shell values taking precedence; development
+and preview default to development and production modes respectively. The supplied
+`.env.example` documents non-secret configuration only. No real environment files or
+credentials are created by this phase. Never put credentials or tokens in `VITE_*`
+values; all `VITE_*` values are public. An absolute API base bypasses the local proxy.
+
+A missing/refused upstream returns HTTP 502 rather than SPA HTML or mock villages.
+Check the target's host/port and backend availability, then retry deliberately.
+401/403 responses remain backend authentication/permission failures; 429 retains
+Retry-After. An HTML response usually indicates a wrong base URL or API routing
+through an SPA fallback. Invalid target origins fail at startup. Do not enable
+detailed request/debug logging with sensitive request data. No TLS verification
+or browser security override is needed or configured.
+
+Vite development/preview proxying is **not a production reverse proxy**. Deploying
+`dist/` does not deploy these server rules. Production needs a same-origin reverse
+proxy that routes `/api/v1` to the backend before the SPA fallback, preserving API
+methods/statuses/headers. Alternatively, build with an explicit absolute API base
+and configure backend CORS for the exact frontend origins, methods and headers
+(including Authorization and Content-Type). Backend authorization remains required
+in both arrangements. Production routing and backend CORS remain separate work.
 
 ## Client interface
 
@@ -202,235 +529,111 @@ both browser tools failed to connect to the native computer-use pipe. Automated
 mock-service tests and HTTP route checks passed, but interactive UI behavior
 was not verified in a browser.
 
-## Village Explorer API integration (gated)
+## Basic public Village integration (Phase 5.6)
 
-`VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Home/Map/Explorer/Details default. `api` selects the API path;
-unknown mode values show an explicit configuration error. Neither errors nor
-blocked API mode silently select mock data. This setting applies only to
-Home, Map, Explorer and Details. Authentication, gated Sources and the protected
-VerificationPanel, data-conflict views and the read-only audit log page use the API
-base independently.
+The current behavior in this section supersedes earlier gated integration reports.
+Baseline: `c0426d9` on `roaa/frontend-final-integration`. A fetch found no incoming
+changes from `origin/main` (`4e2d137`). The checked-out public controller, DTOs,
+service/repository eligibility rules, security configuration, tests and
+`docs/integration/FRONTEND_BACKEND_CONTRACTS.md` were reviewed. No pending
+catalogue, population-filtering or expanded detail contracts are assumed.
 
-The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
-remains **false**. Setting the mode to `api` alone shows an unavailable state
-and makes **no requests**, including governorate requests. No environment flag
-can approve publication security. Tests inject `publicationVerified: true`
-into isolated service factories using mocked HTTP; the app singleton uses the
-closed source-level gate. This is a release gate, not an authorization boundary.
+`publicVillageCapabilities` in `villageMode.js` separates basic browsing and
+identity (enabled) from geographic catalogues and rich sections (disabled).
+The shared mode variable retains `mock` as the default. Explicit `api` mode
+uses real public endpoints and reports errors without mock fallback. Mode selection
+does not approve missing contracts. Factory overrides independently disable browsing
+or identity for tests; no environment switch enables catalogues or rich sections.
+Keep the default until separately approved live integration validation.
 
-The latest fetched `origin/main` had no incoming backend contract changes.
-Reviewed backend evidence still blocks public enablement:
+Verified paths, relative to the unchanged `/api/v1` base:
 
-- `SecurityConfig` requires authentication except for POST login.
-- `VillageController` requires VIEWER/EDITOR/ADMIN for collection reads.
-- `VillageService.activeSpecification` always excludes archived rows, but does
-  not enforce a public publication-status restriction. All village statuses are
-  readable by existing read roles.
-- Village identity reads use `getById` without an archive/publication restriction;
-  a public Details policy is also required before enablement.
-- `GovernorateController` returns `List<GovernorateResponse>` and is covered by
-  the authenticated request rule.
-
-Re-enabling the application API path requires a new source review of merged
-backend public-read authorization and enforced publication rules, then an
-explicit change to the source-level gate. Sending `status=VERIFIED` or hiding
-rows in the browser is not a security substitute. These changes add neither.
-The API base remains `/api/v1`; no backend host/port or proxy is assumed.
-
-`createVillageExplorerService` exposes `listGovernorates({signal})` for the API
-catalog and `listVillages({query, governorateId, page, pageSize, sortBy, sortDir,
-signal})`. Only GET `/governorates` and GET `/villages` are called, through the
-existing API client. Governorate selection uses canonical decimal ID strings;
-its catalog is independent of the current village page. Unknown IDs and empty
-datasets remain legitimate empty results. Catalog failures fail the operation
-explicitly instead of fabricating names or substituting mock data.
-
-Explorer URL state uses `q`, `governorateId`, one-based `page`, `sortBy` and
-`sortDir` in API mode. Page size defaults to 6; service sizes 1–100 and backend
-offset limits are validated before HTTP. The backend's five allowed sort fields
-are exposed in Arabic controls. Filtering and sorting are sent to the server;
-response rows are not filtered or sorted in the browser. Mock mode keeps its
-existing `governorate` name parameter and mock behavior. Legacy mock-name filters
-without a numeric ID fail explicitly in API mode rather than silently broadening
-the query. Choosing a governorate removes the alternate source's filter.
-
-Filter/sort changes reset `page`; navigation, page correction and clearing
-filters preserve unrelated/repeated URL parameters. Out-of-range responses
-trigger a real request for the last valid page (page zero for an empty dataset).
-Two corrective reads are allowed for concurrent dataset shrinkage; continued
-changes produce a retryable error. A failed correction never displays data under
-a falsely clamped page number. Network/HTTP errors have no automatic retries.
-
-`useExplorerData` uses an abort/stale-response controller also reused by API Details;
-the mock hook is unchanged. Navigation and unmount abort the entire catalog/list
-operation, including corrections. Old success/error responses are ignored even
-if a transport ignores cancellation. URL correction is guarded against newer
-navigation and reuses only the matching, already-fetched response. Loading,
-empty, unavailable, 401, 403, rate-limit and network errors have Arabic states.
-Village services do not receive session tokens or redirect to login; their
-publication gate remains closed independently of the new authentication service.
-
-API cards preserve the existing RTL layout and colors, show explicit missing
-name/governorate/image labels. Numeric Details links require available, matching
-Explorer and Details integrations; API villages never link to mock Map routes.
-Interactive browser verification was attempted again
-for this integration and remained unavailable because the native computer-use
-pipe could not connect. Mocked HTTP tests do not establish interactive UI coverage.
-Live backend verification also remains unavailable: no backend was started and
-no live API requests were made. Public-read authorization and publication rules
-remain unconfirmed, so the application API gate stays closed.
-
-## Village Details API integration (gated)
-
-Details reuses the existing mode variable and the same closed release gate as
-Explorer. The gate was moved into `villageMode.js`, remains **false**, and covers
-identity, governorates and all four heritage collections. Public-read and
-server-side publication rules for every integrated endpoint must be reviewed
-before any future enablement. Existing authenticated VIEWER filtering of heritage
-records is not proof of a public-read contract. No frontend status filtering is
-used as an authorization or publication boundary.
-
-`villageDetailsService.js` calls only the following GET contracts through the
-existing API client (paths are relative to the configured `/api/v1` base):
-
-| Path | Purpose / parameters |
+| Request | Contract |
 | --- | --- |
-| `/villages/{id}` | Numeric identity and geography; no query parameters |
-| `/governorates` | Independent catalog and numeric-ID-to-Arabic-name mapping |
-| `/village-historical-overviews` | `villageId`, zero-based `page`, `size` |
-| `/historical-events` | `villageId`, zero-based `page`, `size` |
-| `/cultural-heritage` | `villageId`, zero-based `page`, `size` |
-| `/heritage-sites` | `villageId`, zero-based `page`, `size` |
+| GET `/public/villages` | Paged public DTOs; optional `search`, `governorateId`, `localAuthorityId`, `page`, `size`, `sortBy`, `sortDir` only |
+| GET `/public/villages/{id}` | One public DTO; no query parameters; hidden/missing villages both return 404 |
 
-Route IDs must be canonical positive safe-integer decimal strings in API mode.
-Invalid/sluggified IDs make no HTTP requests; the mock branch keeps its existing
-slug behavior. A 404 from the identity endpoint returns a missing village and
-does not trigger child requests. A 404 from a section remains a section error.
-Mismatched identity IDs, malformed DTOs and wrong-village collection rows fail
-explicitly; records are never selectively hidden to mask a broken contract.
+The backend enforces VERIFIED status and non-archived eligibility before list
+pagination/counting and in the detail lookup. The browser sends no status filter
+and does not implement publication security. Public requests use the plain API
+client with no Bearer token and credentials omitted, including during an active
+authenticated session. An invalid token on a public request would still be rejected
+by backend security, so the authenticated transport is never used here.
 
-`heritageAdapters.js` follows `VillageHistoricalOverviewResponse`,
-`HistoricalEventResponse`, `CulturalHeritageCrudResponse`, `HeritageSiteResponse`
-and their enum definitions. It preserves descriptions, historical LocalDate
-strings (including signed historical years), year ranges, date precision,
-Instant strings, source IDs and each record's verification status. There is no
-timezone conversion or fabricated January/day value for year/period records.
-Missing values remain null, and absent source information stays distinct from
-an explicit empty source list. Coordinates use the existing finite/range checks;
-null coordinates never become zero. DTO text is rendered as React text, not HTML.
+`publicVillageAdapters.js` explicitly validates the seven-field public DTO:
+`id`, `nameAr`, `nameEn`, `governorateId`, `localAuthorityId`, `latitude`,
+`longitude`. Missing/extra fields, invalid types, unsafe/nonpositive IDs and
+invalid coordinate axes fail explicitly. Numeric wire IDs remain numeric in
+`backendId` and relationship fields; existing canonical decimal route IDs stay
+strings. Nullable English names, local-authority IDs and coordinate axes are
+preserved. Partial pairs have no marker; real zero coordinates remain valid.
+No names, descriptions, verification metadata, images or domain content are
+derived from editorial or mock DTOs.
 
-Identity loads first. Governorate names and all four collections then use
-independent instances of the existing cancellation/stale-response hook. A catalog
-or section failure leaves the identity and successful sections usable, shows an
-error instead of an empty state, and can be retried independently. Sections have
-separate one-based UI pagination (default size 5) and request only the selected
-village's page. Out-of-range pages fetch the last valid page, with at most two
-corrective reads; failed corrections remain errors. No entire collections are
-downloaded for local filtering. Navigation resets section pages, aborts old
-requests, ignores late completions, and updates the document title for loading,
-selected village, missing-name, not-found and failure states.
+The public page adapter validates and preserves counts, size, total pages,
+element count, first/last/next/previous/empty flags and out-of-range state.
+Backend page zero becomes UI page one. Explorer keeps its existing cancellation,
+stale-response and bounded last-page correction behavior. Search is literal,
+trimmed with backend Java whitespace semantics, with a 180 UTF-16-unit limit.
+Page sizes are 1–100 (Explorer default 6), with backend offset limits checked
+before HTTP. Both positive geographic ID filters are supported and combine on
+the backend; unknown positive IDs produce empty results.
 
-API Explorer cards link to numeric Details routes only when both services are
-available in the same mode. Their return link retains the Explorer pathname and
-query parameters through router state; other return destinations are rejected.
-API Details links valid coordinates to the API Map only when both integrations
-are available in the same mode. Mock Details keeps its original page structure,
-demo text, titles, section values and Map links. Home and Map use the same mode;
-their mock behavior is preserved.
+Only `id`, `nameAr` and `nameEn` sorting are offered. Obsolete URL sorts
+`createdAt`/`updatedAt` normalize to `id` with a visible explanation.
+Direct unsupported service options are rejected before HTTP; editorial URL
+parameters are never forwarded. Unknown sort values remain validation errors.
+There are no mandatory catalogue requests: API mode shows unavailable names and
+active numeric URL filters honestly, without fabricated dropdown entries or
+ID mappings. Mock mode retains its name-based governorate dropdown.
 
-Population, agriculture and community are explicitly unavailable in API Details:
+Basic API Details displays Arabic/English names, geographic IDs and supplied
+coordinate axes. Invalid IDs send no HTTP. Identity 404 never mounts children or
+tries an editorial endpoint. Population, historical overviews/events, heritage,
+culture, agriculture, facilities and economic activities are explicitly unavailable.
+The public Details renderer sends no Heritage, Population, Agriculture, Community,
+governorate or local-authority request. Existing editorial adapters remain separate.
 
-- `PopulationRecordController.getAll(page, size)` still has no `villageId`
-  parameter. No unfiltered population collection is downloaded.
-- Agriculture's village lookup and community's village filters exist, but their
-  read services have no approved server-side publication policy. Their endpoints
-  are not called and their domain adapters are not invented here.
-- The latest fetch had no incoming backend changes. Global authentication and
-  unconfirmed village/publication policy still prevent live public enablement.
+After a matching safe public identity loads, the existing authenticated Member 3
+panels can mount. Sources reads require VIEWER/EDITOR/ADMIN; linking requires
+EDITOR/ADMIN. Verification and village-conflict history reads permit every
+authenticated account; role-specific actions retain the Phase 5.4 matrix.
+Anonymous/expired sessions mount no protected panels. Empty/invalid/stale roles
+cannot read Sources. Logout, profile/session replacement and permission revocation
+reuse the existing scoped services and state cleanup; late protected responses
+cannot restore revoked data. Backend authorization remains authoritative.
+No protected metadata or claim notes are part of the public DTO or anonymous view.
 
-Automated tests use mocked HTTP and dependency-free Node assertions, covering
-domain/null mappings, request paths, filters, pagination, independent failures,
-closed gates, cancellation/stale responses, titles, mock regressions and navigation
-helpers. Interactive browser verification was attempted for Details but the native
-computer-use pipe was unavailable. Interactive UI behavior remains unverified.
-HTTP application-shell checks are not browser verification. No backend was started,
-no live backend requests were made and live backend verification remains unavailable.
+Home keeps its mock featured selection. API Home continues to report featured
+content unavailable without requests or an invented selection policy.
+The existing Map service now reuses the public listing adapter as a compatibility
+change; no Map UI/functionality was expanded. Its bounded all-page traversal,
+duplicate/order/count checks, nullable-marker behavior and mock renderer remain.
+A dedicated Map phase still needs live dataset/limits review, coordinate quality
+and marker/popup/tile interaction validation. Offset pagination has no snapshot
+token, so count/order checks do not prove a point-in-time snapshot.
 
-## Map and Home API integration (gated)
+There are no proxy, dependency, backend or security changes. Live routing/CORS,
+real backend behavior and catalogue/rich-section contracts remain separate work.
+The frontend build alone does not establish live integration.
 
-The existing mode variable now applies to all four main pages. Its name is kept
-for configuration compatibility. The shared publication gate remains **false**;
-selecting `api` does not approve or enable public data access. Map's closed gate
-prevents every catalog/list request and makes no mock fallback. No authentication,
-publication-policy change or new backend endpoint is introduced.
+Phase 5.6 validation: 943 frontend tests passed, with successful build, lint and
+diff whitespace checks. Tests include actual JSX rendering and simulated HTTP
+contracts, independent capabilities, nullable/missing fields, safe IDs, public
+token isolation, unsupported queries/sections, errors, pagination correction,
+cancellation, stale responses, Member 3 permissions and mock regression.
 
-`villageMapService.js` traverses the verified village listing through the existing
-Explorer service and adapters. Each call requests one-based page N as backend
-page N-1, with `sortBy=id`, `sortDir=asc`, and default size 100. The reused service
-also loads the governorate catalog for each page; no separate transport logic or
-hidden endpoint is added. Traversal is sequential and bounded to 100 pages and
-10,000 records. Smaller factory limits are supported for tests; values above
-these ceilings are rejected before HTTP.
-
-The first page establishes total records/pages. Subsequent responses must keep
-those totals, return the requested page/size and contain unique IDs in strictly
-ascending order. A changed total, duplicate ID, skipped/corrected page, malformed
-response, failed request or limit overrun rejects the entire load. Already-read
-rows are never returned as a partial map, silently deduplicated, or represented
-as complete. Retry starts from page zero with a fresh collection. An empty first
-page with zero totals is a successful complete empty traversal.
-
-`complete: true` means every advertised page was retrieved and the observable
-counts/IDs/order checks passed. The backend uses offset pagination and has no
-snapshot/version token; these checks cannot establish a point-in-time snapshot
-or detect all same-count changes during concurrent edits. A stronger consistency
-guarantee requires a backend contract. This limitation remains separate from the
-closed publication gate.
-
-The API Map renders only after successful full traversal. Coordinate validation
-comes from the existing village adapter. Malformed supplied coordinates fail
-the load; nullable/incomplete pairs remain null and stay in the village index
-without markers. Actual numeric zero is valid, and missing axes never become
-zero. Marker eligibility is geography-only, not client-side publication filtering.
-Numeric `village` selections are resolved against the loaded permitted listing;
-invalid, absent and missing-coordinate selections have explicit states. No direct
-identity lookup is used to add a village omitted from the listing.
-
-Map, Explorer and Details links require matching available integrations. API
-popups/index links use numeric Details routes; router state preserves a Map return
-URL including selected-village and unrelated query parameters. Only internal Map
-or Explorer return paths are accepted. Mock slug navigation remains separate.
-Selection changes reuse the complete dataset; reload/unmount cancels the entire
-traversal and the existing stale-response controller ignores late success/errors.
-
-Leaflet, its marker assets and Arabic controls, OpenStreetMap tiles and attribution,
-RTL popups/layout and the original mock Map rendering are retained. Tile failures
-keep the existing warning and village index available. Empty collections, no valid
-locations, missing names, HTTP/auth failures and network/traversal failures have
-explicit Arabic states. No partial dataset is shown after a failed load.
-
-`villageHomeService.js` reuses the existing Explorer service for mock featured
-villages, preserving the three demo selections and their order. Home search uses
-the Explorer URL helper and the `q` parameter, preserving literal Arabic and
-reserved characters without adding status filters. The hero, Arabic text,
-illustrative artwork, routes and mock cards are preserved.
-
-No featured endpoint or approved selection policy was found in the fetched
-backend contracts. In API mode, `getFeatured` returns an explicit unavailable
-state and makes no requests, even in isolated tests with publication confirmation
-injected. It never sends an unsupported featured parameter, takes arbitrary rows
-from the listing or substitutes demo records. This availability-only result does
-not bypass the gate or expose API data. A future featured policy needs separate
-backend/team approval before implementing a selection.
-
-Dependency-free tests cover all-page retrieval, incomplete/empty datasets, limits,
-duplicates, coordinate validity, cancellation/stale loads, selections, navigation,
-Home search, featured unavailability, mock regression and zero-request closed gates.
-Interactive verification of Home/Map was attempted, but the native computer-use
-pipe could not connect. Browser layout, marker/popup/zoom interaction and tile-error
-rendering remain unverified interactively. HTTP application-shell checks are not
-browser verification. The backend/PostgreSQL were not started, no live API requests
-were made and live backend verification remains unavailable.
+Twelve headless Edge browser checks passed against isolated frontend servers
+with simulated HTTP responses and test-only API/mock mode definitions. They
+checked Explorer paths/filters/obsolete sorting, anonymous Details, 404/invalid
+IDs, simulated ADMIN panels, role revocation, failed refresh, logout with a late
+Sources response, error/no-fallback behavior, featured unavailability and mock
+Home/Explorer/Details/Map navigation. There were zero unexpected API requests
+and zero public Bearer headers. Edge required a temporary profile and disabled
+browser sandbox in this environment. No user browser profile was used; no backend
+or database was contacted. Visual/keyboard/RTL review, live CORS/data behavior
+and real Map marker/popup/tile validation remain outstanding. Browser harness
+files and logs were temporary and are not part of the repository changes.
 
 ## Authentication and session management
 
@@ -480,14 +683,11 @@ mock data. Authentication does not attach credentials to village services, chang
 the publication gate or approve live public reads. No requests occur on anonymous
 startup; auth requests begin only through explicit login/session operations.
 
-`RequireAuth` is available for future protected routes, with loading, login
-redirect and safe internal return navigation. No administrative route is added.
-**Effective roles remain blocked:** `/auth/me` still omits them. The JWT has no
-role claims; the server resolves authorities from the database. Profile mappings
-therefore expose `roles: null, rolesVerified: false`, ignore unsupported role
-properties and deny every role-dependent guard requirement. No username or JWT
-decoding is used to infer permissions. Frontend guards control UI only; backend
-authorization remains authoritative.
+`RequireAuth` supports protected routes with loading, login redirect, forbidden
+and unverified-role states, plus safe internal return navigation. Phase 5.4
+consumes effective roles from `/auth/me`; see the current policy above. No username
+or JWT decoding is used to infer permissions. Frontend guards control UI only;
+backend authorization remains authoritative.
 
 The API base is shared with the existing client and is independent of the village
 mode/publication gate. No backend port or proxy has been assumed. Before live
@@ -515,29 +715,28 @@ Manual verification once a browser and confirmed test backend are available:
 5. Check Home, Explorer, Details and Map mock navigation before/after login, and
    verify that API village mode remains blocked with zero village API requests.
 
-## Sources management and village source linking (role contract blocked)
+## Sources management and village source linking
 
 Fetched remote refs on `roaa/frontend-integration` at `93669e7`; there were no
 incoming `origin/main` changes. Reviewed `SourceController`,
 `VillageSourceController`, their services/entities, source DTOs and enum,
 `DataQualityExceptionHandler`, global handlers and the security configuration.
-`/auth/me` still returns only username, without effective roles.
+At that delivery snapshot `/auth/me` returned only username; Phase 5.4 now
+consumes the merged effective-role contract.
 
 **Every Sources read is role-dependent.** Controller and service rules require
 VIEWER/EDITOR/ADMIN for all four GET contracts and EDITOR/ADMIN for mutations.
 There is no Sources endpoint explicitly permitting every authenticated user.
-Consequently, the actual app makes **zero Sources requests**, including catalog
-and link reads. `/sources` uses `RequireAuth`, then shows an explicit unavailable
-state instead of an empty catalog or fabricated records. The authenticated Navbar
-links to this protected route; Login preserves safe `/sources?source=ID` returns.
+`/sources` now requires an explicitly recognized effective role. VIEWER reads;
+EDITOR/ADMIN can create/update. Unverified or insufficient permissions send no
+Sources requests. Navbar uses the same route policy; Login preserves safe
+`/sources?source=ID` returns. Linking UI wiring remains deferred.
 
-`sourceAccess.js` keeps `effectiveSourceRolesVerified` false independently of the
-village publication gate. There is no environment switch or demo role/session.
-Unexpected role properties, usernames and JWT decoding cannot enable access.
-Future enablement requires a reviewed effective-role DTO, corresponding auth
-mapping/guard updates, and explicit source-policy review. Isolated automated tests
-inject verified-role fixtures into factories to exercise the verified endpoint
-contracts; those fixtures never enable the application singleton or create users.
+`sourceAccess.js` shares the enabled effective-role capability independently of
+the closed Village publication gate. There is no environment switch or demo
+role/session. Usernames, JWT claims and unrecognized role data cannot enable
+access. Automated tests use simulated HTTP and explicit closed-contract fixtures;
+they never create users or contact a backend.
 Frontend permissions control UI behavior; backend authorization is authoritative.
 
 `sourcesService.js` uses AuthProvider's scoped request method and the unchanged
@@ -608,10 +807,9 @@ unlinking, search, pagination, Verification Records, Data Conflicts or Audit Log
 feature is added.
 
 Manual checks once browser/routing are available: verify anonymous `/sources`
-redirect and safe login return, keyboard/RTL behavior, authenticated unavailable
-notice with zero Sources requests, logout/navigation cleanup and unchanged public
-mock browsing. Live catalog/forms/link checks require the effective-role contract
-and real-village integrations to be reviewed first; do not bypass the gates.
+redirect, safe login return, role-specific navigation/forms, zero requests for
+insufficient permissions, profile refresh, keyboard/RTL behavior, logout cleanup
+and unchanged mock browsing. Linking UI still needs separately approved wiring.
 
 Validation for this step: all 583 dependency-free tests passed (68 added), along
 with `npm run build`, `npm run lint`, `git diff --check` and whitespace checks of
@@ -626,7 +824,8 @@ These automated checks do not establish interactive browser or live backend cove
 Started from clean `roaa/frontend-integration` at `eaa4ac8`, fetched remote refs,
 and found no incoming `origin/main` changes. Reviewed the verification controller,
 service, request/response DTOs, enum, entity/repository, data-quality exception
-handlers and security configuration. `/auth/me` still exposes only username.
+handlers and security configuration. That historical snapshot had a username-only
+`/auth/me`; effective roles are now integrated in Phase 5.4.
 
 Verified paths, relative to the existing `/api/v1` API base:
 
@@ -658,10 +857,10 @@ it neither changes local village status nor sends a village update request.
 `verificationService.js` uses AuthProvider's existing scoped request/getSnapshot
 architecture and unchanged API client. Authentication-only read permission reuses
 `authAccessDecision`; ADMIN creation reuses the existing verified-role helper and
-its still-closed effective-role contract. Missing roles do not block the verified
-GET contract, but **all actual application POSTs remain blocked**. No environment
-override, inferred JWT claims, synthetic users or administrator sessions are added.
-Tests inject isolated role fixtures only into service factories.
+the enabled effective-role contract. Missing roles do not block the authenticated
+GET contract; decision creation requires verified ADMIN. No environment override,
+inferred JWT claims or synthetic application sessions are added. Tests use
+simulated HTTP and explicit service fixtures.
 
 The reusable Arabic RTL `VerificationPanel` mounts in `ApiVillageDetails` after
 a real village identity loads. It reuses the numeric-identity/integration guard;
@@ -691,8 +890,8 @@ clears confirmed current-session 401 failures and preserves the distinction from
 Transport cancellation cannot undo a server mutation already committed; an
 uncertain write result advises checking history before manually retrying.
 
-Remaining enablement blockers are effective roles for ADMIN creation, confirmed
-backend routing/CORS, and approved real-village API integration. These frontend
+Remaining panel blockers are confirmed backend routing/CORS and approved
+real-village API integration. These frontend
 changes do not alter backend authorization or the public publication gate.
 
 Validation: all 650 dependency-free tests passed, including 67 new verification
@@ -720,14 +919,14 @@ Manual verification once browser and approved test integration are available:
 3. Check Arabic RTL layout, keyboard/focus behavior, labels, loading/empty/error
    states, actual reviewer IDs/timestamps, missing metadata and server ordering.
 4. Use isolated mocked POST responses (or an explicitly approved test setup after
-   roles are exposed) to check ADMIN-only decisions, duplicate clicks and success
+   routing is ready) to check ADMIN-only decisions, duplicate clicks and success
    followed by a failed GET refresh. A history retry must issue only GET; village
    status must remain unchanged.
 5. Check 400/401/403/404 and offline responses, then navigate between villages or
    log out with delayed requests. Old history, saved records and errors must not
    appear in the new village/session. Never bypass the application gates to test.
 
-## Data conflicts (role contract partially blocked)
+## Data conflicts
 
 Reviewed `DataConflictController`, `DataConflictService`, the `DataConflict`
 entity, `CreateDataConflictRequest`, `ResolveDataConflictRequest`,
@@ -753,11 +952,10 @@ non-blank text with no length limit. Invalid transitions return 409, validation
 `resolvedAt`. It does **not** change village data, and the UI states this.
 
 `conflictService.js` reuses AuthProvider's scoped request, the API client and
-the session checks used by Verification. `conflictAccess.js` reuses the closed
-effective-role contract. Authenticated users can read village conflicts. Status
-lists, creation, review and resolution are blocked without verified roles. With
-the current `/auth/me` contract, the app sends **no** management or mutation
-requests. Tests use isolated role fixtures only.
+the session checks used by Verification. `conflictAccess.js` reuses verified
+effective roles: authenticated village reads, EDITOR/ADMIN creation and status
+lists, and ADMIN review/resolve. Insufficient or unverified permissions send no
+role-dependent requests. Tests use simulated HTTP and explicit service fixtures.
 
 `conflictListState.js` drives both the reusable `VillageConflictsPanel`, which
 mounts in `ApiVillageDetails` after the Verification panel, and the protected
@@ -784,12 +982,12 @@ mock Details render with no conflict panel, and that anonymous
 behaviour and role-dependent views remain unverified: no backend or PostgreSQL
 was started and no records or users were created.
 
-## Audit logs (read-only, role contract blocked)
+## Audit logs (read-only)
 
 Reviewed `AuditLogController`, `AuditLogService`, `AuditLogResponse`, the
 `AuditLog` entity, `AuditLogRepository`, `AuditAction`, the `audit_logs` schema,
-`DataQualityExceptionHandler` and the controller integration tests. `/auth/me`
-still returns only `username`. No incoming `origin/main` changes were present.
+`DataQualityExceptionHandler` and the controller integration tests. The original
+delivery had username-only `/auth/me`; Phase 5.4 integrates effective roles.
 
 | Endpoint | Parameters | Response |
 | --- | --- | --- |
@@ -816,9 +1014,9 @@ searchable. Entity results cover only that type and ID, and the page says they
 are not a complete village history.
 
 `auditService.js` reuses AuthProvider's scoped request, the API client and the
-session checks. `auditAccess.js` requires a verified ADMIN through the existing,
-still-closed effective-role contract, so the actual app sends **zero** audit
-requests. The protected `/audit-logs` page uses `RequireAuth`. It keeps exactly
+session checks. `auditAccess.js` requires a verified ADMIN through the enabled
+effective-role contract. Other accounts send zero audit requests. The protected
+`/audit-logs` page uses an ADMIN route guard. It keeps exactly
 one query mode in the URL (`mode=entity|actor|action`) and validates it before
 any request. Invalid URL filters send nothing. `auditLogState.js` holds one
 read-only store per canonical query. A filter change, leaving the page, logout

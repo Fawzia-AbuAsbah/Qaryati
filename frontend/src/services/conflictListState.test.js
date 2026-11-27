@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createConflictListState } from './conflictListState.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 import { createVillageDetailsService } from './villageDetailsService.js'
 
 const open = Object.freeze({ id: '9', entityId: '42', status: 'OPEN', fieldName: 'population', conflictingValues: [] })
@@ -210,10 +210,10 @@ test('cleanup cancels pre-dispatch work and supports a StrictMode remount', asyn
   assert.equal(store.getSnapshot().listStatus, 'ready')
 })
 
-test('public API Details stays gated and mock browsing makes no conflict requests', async () => {
-  assert.equal(publicVillageContractsVerified, false)
+test('disabled identity capability sends no HTTP and mock browsing makes no conflict requests', async () => {
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
   const request = () => assert.fail('No public API or protected conflict requests')
-  await assert.rejects(createVillageDetailsService({ mode: 'api', request }).getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
+  await assert.rejects(createVillageDetailsService({ mode: 'api', identityVerified: false, request }).getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   assert.equal((await createVillageDetailsService({ request }).getVillage('battir')).id, 'battir')
 })

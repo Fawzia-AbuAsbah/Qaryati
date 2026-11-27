@@ -5,7 +5,7 @@ const none = Object.freeze({ read: false, manage: false, create: false, review: 
 
 // DataConflictService: village reads isAuthenticated(); create and status reads
 // EDITOR/ADMIN; review and resolve ADMIN. Role-dependent operations reuse the
-// still-closed effective-role contract and fail closed without verified roles.
+// verified effective-role contract and fail closed without valid profile roles.
 export function conflictPermissions(session, { rolesContractVerified = effectiveSourceRolesVerified, now = Date.now() } = {}) {
   if (authAccessDecision(session, { now }) !== 'allow') return { ...none, reason: 'AUTH_REQUIRED' }
   const roles = sourcePermissions(session, { rolesContractVerified, now })

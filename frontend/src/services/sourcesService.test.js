@@ -233,12 +233,12 @@ test('mutation controller preserves conflicts and releases its submission latch 
   assert.equal(count, 2)
 })
 
-test('real auth profile still supplies no roles: Sources makes zero requests after a successful login', async t => {
+test('malformed mixed /me roles fail closed: Sources makes zero requests after login', async t => {
   const calls = []
   const client = createApiClient({ fetchImpl: (url, init) => {
     calls.push({ url, init })
     if (url.endsWith('/auth/login')) return response({ accessToken: 'memory-token', tokenType: 'Bearer', expiresIn: 900 })
-    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN'] })
+    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN', 'UNKNOWN'] })
     assert.fail('Unverified roles must never enable Sources')
   } })
   const store = createAuthSession({ service: createAuthService({ request: client }) })
@@ -252,26 +252,21 @@ test('real auth profile still supplies no roles: Sources makes zero requests aft
   await assert.rejects(service.list(), { code: 'AUTH_REQUIRED' })
 })
 
-test('AuthProvider-scoped requests cancel on logout and clear confirmed 401 sessions in isolated future-role fixtures', async t => {
+test('AuthProvider-scoped requests cancel on logout, clear 401 and retain 403 with effective roles', async t => {
   for (const outcome of ['logout', '401', '403']) {
     const pending = deferred(), started = deferred()
     let sourceSignal
     const client = createApiClient({ fetchImpl: (url, init) => {
       if (url.endsWith('/auth/login')) return response({ accessToken: 'memory-token', tokenType: 'Bearer', expiresIn: 900 })
-      if (url.endsWith('/auth/me')) return response({ username: 'role-fixture' })
+      if (url.endsWith('/auth/me')) return response({ username: 'role-fixture', roles: ['VIEWER'] })
       sourceSignal = init.signal
       assert.equal(init.headers.get('Authorization'), 'Bearer memory-token')
       started.resolve(); return pending.promise
     } })
-    const actual = createAuthService({ request: client })
-    // Test-only role information stands in for a future approved /me DTO. The
-    // production mapper/gate above remain unchanged and reject these claims.
-    const store = createAuthSession({ service: { ...actual, async getProfile(token, options) {
-      return { ...await actual.getProfile(token, options), roles: ['VIEWER'], rolesVerified: true }
-    } } })
+    const store = createAuthSession({ service: createAuthService({ request: client }) })
     t.after(() => store.dispose())
     await store.login({ username: 'fixture', password: 'fixture' })
-    const service = createSourcesService({ request: store.request, getSession: store.getSnapshot, rolesContractVerified: true })
+    const service = createSourcesService({ request: store.request, getSession: store.getSnapshot })
     const request = service.list()
     await started.promise
     if (outcome === 'logout') { store.logout(); assert.equal(sourceSignal.aborted, true) }

@@ -3,8 +3,29 @@ import { toBackendId } from './villageAdapters.js'
 import { VillageAccessError } from './villageMode.js'
 import { detailsErrorMessage } from './villageDetailsState.js'
 
+export function hasMapCoordinates(village) {
+  return Array.isArray(village?.coordinates) && village.coordinates.length === 2 && hasCoordinates(village)
+}
+
+// Leaflet takes [latitude, longitude]. Never give it an empty bounds array or
+// invent a location for a village whose public coordinates are unavailable.
+export function mapViewport(villages, selected) {
+  const markers = villages.filter(hasMapCoordinates)
+  if (!markers.length) return null
+  const target = markers.find(village => village.id === selected?.id)
+  if (target || markers.length === 1) return { center: (target ?? markers[0]).coordinates, zoom: target ? 14 : 11 }
+  return { bounds: markers.map(village => village.coordinates), options: { padding: [30, 30], maxZoom: 11 } }
+}
+
+export function mapSelectionQuery(params, id) {
+  const next = new URLSearchParams(params)
+  if (id == null) next.delete('village')
+  else { toBackendId(id); next.set('village', id) }
+  return next
+}
+
 export function villageMapHref(village, source, map) {
-  if (!source.available || !map.available || source.mode !== map.mode || !hasCoordinates(village)) return null
+  if (!source.available || !map.available || source.mode !== map.mode || !hasMapCoordinates(village)) return null
   if (map.mode === 'api') {
     try { toBackendId(village.id) } catch { return null }
   } else if (map.mode !== 'mock' || typeof village.id !== 'string' || !village.id) return null
@@ -17,13 +38,13 @@ export function mapPresentation(dataset, selectedId, mode = 'api') {
     throw new VillageAccessError('INCOMPLETE_MAP')
   }
   // Coordinate eligibility affects markers only; no publication/status filtering.
-  const markers = dataset.items.filter(hasCoordinates)
+  const markers = dataset.items.filter(hasMapCoordinates)
   if (selectedId == null || selectedId === '') return { markers, selected: null, selection: 'none' }
   if (mode === 'api') {
     try { toBackendId(selectedId) } catch { return { markers, selected: null, selection: 'invalid' } }
   }
   const village = dataset.items.find(item => item.id === selectedId)
-  const selection = !village ? 'not-found' : hasCoordinates(village) ? 'selected' : 'no-coordinates'
+  const selection = !village ? 'not-found' : hasMapCoordinates(village) ? 'selected' : 'no-coordinates'
   return { markers, selected: selection === 'selected' ? village : null, selection }
 }
 

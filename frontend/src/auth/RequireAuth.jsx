@@ -9,5 +9,6 @@ export function RequireAuth({ children, requiredRoles = [] }) {
   if (decision === 'pending') return <p className="state" role="status">جارٍ التحقق من الجلسة…</p>
   if (decision === 'login') return <Navigate to="/login" replace state={{ from: safeAuthReturnTo(`${location.pathname}${location.search}${location.hash}`) }} />
   if (decision === 'roles-unavailable') return <div className="state" role="alert"><h2>هذه الوظيفة غير متاحة حاليًا</h2><p>لا يمكن التحقق من صلاحيات الوصول المطلوبة.</p></div>
+  if (decision === 'forbidden') return <div className="state" role="alert"><h2>صلاحية غير كافية</h2><p>لا تتوفر لحسابك صلاحية الوصول إلى هذه الصفحة.</p></div>
   return children
 }

@@ -13,11 +13,24 @@ test('RequireAuth policy waits for profile verification and redirects anonymous/
   assert.equal(authAccessDecision(authenticated, { now }), 'allow')
 })
 
-test('every role-dependent requirement fails closed, including unsupported and fabricated caller claims', () => {
+test('role-dependent requirements fail closed for missing roles and unsupported requirements', () => {
   for (const requiredRoles of [['ADMIN'], ['EDITOR'], ['VIEWER'], ['UNKNOWN_ROLE'], 'ADMIN', null]) {
     assert.equal(authAccessDecision(authenticated, { requiredRoles, now }), 'roles-unavailable')
+  }
+  for (const requiredRoles of [['UNKNOWN_ROLE'], 'ADMIN', null]) {
     assert.equal(authAccessDecision({ ...authenticated, user: { username: 'admin', roles: ['ADMIN'], rolesVerified: true } }, { requiredRoles, now }), 'roles-unavailable')
   }
+})
+
+test('generic guards use explicit OR permissions without implicit role inheritance', () => {
+  const session = { ...authenticated, user: { username: 'profile', roles: ['ADMIN'], rolesVerified: true } }
+  assert.equal(authAccessDecision(session, { requiredRoles: ['ADMIN'], now }), 'allow')
+  assert.equal(authAccessDecision(session, { requiredRoles: ['VIEWER', 'ADMIN'], now }), 'allow')
+  assert.equal(authAccessDecision(session, { requiredRoles: ['VIEWER'], now }), 'forbidden')
+  assert.equal(authAccessDecision(session, { requiredRoles: ['EDITOR'], now }), 'forbidden')
+  assert.equal(authAccessDecision({ ...session, checking: true }, { requiredRoles: ['ADMIN'], now }), 'pending')
+  assert.equal(authAccessDecision({ ...session, checking: true }, { now }), 'allow')
+  assert.equal(authAccessDecision(session, { requiredRoles: ['ADMIN', 'UNKNOWN'], now }), 'roles-unavailable')
 })
 
 test('post-login return URLs stay inside existing routes and preserve query parameters', () => {

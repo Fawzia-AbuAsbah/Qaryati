@@ -6,7 +6,7 @@ import { createAuditLogState } from './auditLogState.js'
 import { adaptAuditLog, auditErrorMessage } from './auditContracts.js'
 import { safeAuthReturnTo } from './authAccess.js'
 import { StructuredValue } from '../components/conflicts/StructuredValue.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 import { createVillageDetailsService } from './villageDetailsService.js'
 
 const log = Object.freeze({ id: '21', entityType: 'SOURCE', entityId: '7', action: 'UPDATE' })
@@ -122,10 +122,10 @@ test('login return URLs accept the protected audit page with its filters only', 
   assert.equal(safeAuthReturnTo('//audit-logs'), '/')
 })
 
-test('publication gate stays closed and mock browsing makes no audit requests', async () => {
-  assert.equal(publicVillageContractsVerified, false)
+test('disabled identity capability sends no HTTP and mock browsing makes no audit requests', async () => {
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
   const request = () => assert.fail('No public API or audit requests')
-  await assert.rejects(createVillageDetailsService({ mode: 'api', request }).getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
+  await assert.rejects(createVillageDetailsService({ mode: 'api', identityVerified: false, request }).getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   assert.equal((await createVillageDetailsService({ request }).getVillage('battir')).id, 'battir')
 })

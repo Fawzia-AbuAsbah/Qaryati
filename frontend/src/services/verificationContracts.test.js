@@ -63,9 +63,9 @@ test('timestamps are actual valid OffsetDateTime strings and null remains unavai
   for (const reviewedAt of ['', 'today', 1, '2026-02-30T10:00:00Z', '2026-11-27T24:00:00Z', '2026-11-27T10:60:00Z', '2026-11-27T10:00:60Z', '2026-11-27T10:00:00+18:01']) assert.throws(() => adaptVerification({ ...dto, reviewedAt }))
 })
 
-test('history explicitly permits authenticated users without roles while production creation always fails closed', () => {
+test('history permits authenticated users without roles; creation requires verified ADMIN', () => {
   assert.deepEqual(verificationPermissions(session), { read: true, create: false, reason: 'VERIFICATION_ROLES_UNAVAILABLE' })
-  assert.equal(verificationPermissions({ ...session, user: { username: 'admin', roles: ['ADMIN'], rolesVerified: true } }).create, false)
+  assert.equal(verificationPermissions({ ...session, user: { username: 'admin', roles: ['ADMIN'], rolesVerified: true } }).create, true)
   for (const status of ['anonymous', 'authenticating']) assert.equal(verificationPermissions({ ...session, status }).read, false)
   assert.equal(verificationPermissions({ ...session, expiresAt: Date.now() - 1 }).read, false)
 })
