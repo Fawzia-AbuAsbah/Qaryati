@@ -7,6 +7,8 @@ import { createVillageExplorerService } from './villageExplorerService.js'
 import { createVillageDetailsService } from './villageDetailsService.js'
 import { createSourcesService } from './sourcesService.js'
 import { readExplorerQuery } from './explorerQuery.js'
+import { createVillageMapService } from './villageMapService.js'
+import { createVillageHomeService, homeSearchLocation } from './villageHomeService.js'
 
 const dto = { id: 42, nameAr: 'Synthetic village', nameEn: null, governorateId: 2, localAuthorityId: null, latitude: 31, longitude: 35 }
 const page = { content: [dto], number: 0, size: 6, totalElements: 1, totalPages: 1, numberOfElements: 1,
@@ -118,3 +120,46 @@ for (const [query, expected] of [['\u001c abc \u3000', 'abc'], ['\u00a0abc\u00a0
     await service.listVillages({ query })
   })
 }
+
+test('Home handoff and all Map pages remain public and token-free across login and logout', async t => {
+  const calls = [], rows = [dto, { ...dto, id: 43, latitude: null, longitude: null }, { ...dto, id: 44, latitude: 0, longitude: 0 }]
+  const client = createApiClient({ fetchImpl: async (url, init) => {
+    calls.push({ url, init })
+    if (url.endsWith('/login')) return json({ accessToken: 'simulated-token', tokenType: 'Bearer', expiresIn: 600 })
+    if (url.endsWith('/auth/me')) {
+      assert.equal(init.headers.get('Authorization'), 'Bearer simulated-token')
+      return json({ username: 'synthetic', roles: ['ADMIN'] })
+    }
+    const parsed = new URL(url, 'https://frontend.example.test')
+    assert.equal(parsed.pathname, '/api/v1/public/villages')
+    assert.equal(init.headers.has('Authorization'), false)
+    assert.equal(init.credentials, 'omit')
+    assert.equal(init.method, 'GET')
+    assert.equal(parsed.searchParams.get('sortBy'), 'id')
+    assert.equal(parsed.searchParams.get('sortDir'), 'asc')
+    for (const key of parsed.searchParams.keys()) assert.ok(['page', 'size', 'search', 'sortBy', 'sortDir'].includes(key))
+    const number = Number(parsed.searchParams.get('page')), size = Number(parsed.searchParams.get('size'))
+    const content = rows.slice(number * size, (number + 1) * size), totalPages = Math.ceil(rows.length / size)
+    return json({ content, number, size, totalElements: rows.length, totalPages, numberOfElements: content.length,
+      first: number === 0, last: number + 1 >= totalPages, hasNext: number + 1 < totalPages, hasPrevious: number > 0, empty: !content.length })
+  } })
+  const session = createAuthSession({ service: createAuthService({ request: client }) })
+  t.after(() => session.dispose())
+  const home = createVillageHomeService({ mode: 'api', request: client })
+  const map = createVillageMapService({ mode: 'api', request: client, pageSize: 2 })
+  assert.equal((await home.getFeatured()).status, 'unavailable')
+  assert.equal(calls.length, 0)
+  assert.equal((await map.listVillages()).total, 3)
+  await session.login({ username: 'synthetic', password: 'simulated-password' })
+  const before = calls.length
+  assert.equal((await home.getFeatured()).status, 'unavailable')
+  assert.equal(calls.length, before)
+  const target = homeSearchLocation(' بتير & Battir ', { mode: 'api' })
+  await createVillageExplorerService({ mode: 'api', request: client }).listVillages(readExplorerQuery(new URLSearchParams(target.search)))
+  assert.equal(new URL(calls.at(-1).url, 'https://frontend.example.test').searchParams.get('search'), 'بتير & Battir')
+  const data = await map.listVillages()
+  assert.deepEqual(data.items.map(item => item.coordinates), [[31, 35], null, [0, 0]])
+  session.logout()
+  assert.equal((await map.listVillages()).complete, true)
+  assert.equal(calls.filter(call => call.url.includes('/public/')).length, 7)
+})

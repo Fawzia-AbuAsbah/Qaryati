@@ -7,6 +7,80 @@ Mock Map and Details retain their existing renderers; mock Home keeps
 its original featured villages, hero and navigation.
 Starting the frontend does not start the backend or connect to PostgreSQL.
 
+## Phase 5.7: Public Home and Map integration
+
+Baseline: `59fcf8c` on `roaa/frontend-final-integration`, initially clean with
+943 passing tests. Fetching remote refs found no incoming changes;
+`origin/main` remains `4e2d137`. Implementation uses the checked-out public
+Village controller/DTO/service/security contracts and integration documentation.
+Public catalogues and rich sections remain unavailable. Mock remains the default.
+
+Home keeps its existing hero, navigation and mock featured selection. API Home
+search submits only the encoded `q` UI parameter to `/villages`; Explorer maps it
+to the backend `search` parameter on `/api/v1/public/villages`. Arabic, English,
+reserved characters, empty searches and backend Java whitespace semantics are
+covered. Home and Explorer share the public search normalizer and 180 UTF-16-unit
+limit; mock normalization remains unchanged. The input supports automatic text
+direction and accessible validation feedback. API featured content remains
+unavailable, with no request, arbitrary selection or mock substitution. Home
+displays no village statistics, so no simulated count is presented as real data.
+
+Map retains the existing Leaflet design and public all-page retrieval service:
+GET `/api/v1/public/villages`, ID ascending, default page size 100, maximum 100
+pages and 10,000 records. The backend supplies only VERIFIED, non-archived rows.
+Every page uses the public DTO adapter and exact pagination validation; duplicate
+IDs, order/count changes, malformed data, failed pages and exceeded limits fail
+the entire load. Retry starts a fresh traversal. Partial collections never become
+complete maps. Offset pagination still provides no database snapshot guarantee.
+Public requests use the plain client without Bearer headers or cookies, including
+while an account is authenticated. No protected catalogues or rich sections are
+requested, and no geographic names or images are inferred from mock data.
+
+The Map render boundary accepts only finite two-element `[latitude, longitude]`
+pairs within geographic ranges. Real zero coordinates remain valid. Invalid API
+axes fail the adapter; missing pairs retain their villages in the index without
+markers. Counts distinguish all public villages from valid markers, including
+empty datasets. No-marker datasets never mount Leaflet; one marker gets an
+explicit bounded point view; multiple markers fit their actual bounds. Selecting
+a known marker centers it, and reset fits all valid locations. Resizing invalidates
+Leaflet's cached size through ResizeObserver, with normal Leaflet window-resize
+handling available when the observer is unsupported.
+
+The API index provides native buttons for selecting markers and clearing the
+selection, preserving unrelated/repeated URL parameters without reloading the
+dataset. Numeric Details links remain available independently of marker presence.
+Markers and the map retain keyboard handling, Arabic instructions and zoom labels;
+the index provides an alternative to popup navigation. Popups use React text and
+actual numeric IDs. Reset closes the old selected popup. Long popup/index content
+wraps within the existing responsive design, and focus remains visible inside the
+map frame. OpenStreetMap copyright attribution remains visible and linked.
+
+Village API loading/failure/retry states are separate from tile loading/failure.
+Tile errors keep validated village data and navigation available; their retry
+redraws only the tile layer and never reloads Village data. There are no mutation
+retries or API-to-mock fallback paths.
+
+Validation: 988 tests pass (45 added), with successful build, lint and whitespace
+checks. Coverage includes real Home-to-Explorer service handoff, public transport
+isolation across login/logout, multi-page retrieval/limits/errors/cancellation,
+stale success/failure, coordinate order/zero/invalid pairs, bounds, selection URLs,
+counts and mock regression. Actual Home/Map JSX renders are exercised using
+installed React/Vite with only data hooks and DOM-dependent Leaflet bindings
+replaced. Those tests check the props reaching map/markers, safe popup content,
+Details links, keyboard labels/controls, attribution and loading/empty/error states;
+they do not execute Leaflet in a real browser or establish interactive behavior.
+
+Secure browser checks were attempted without disabling security protections.
+Headless Edge started but its renderer timed out with sandboxing enabled. The
+browser access host was unavailable; native Chrome access timed out waiting for
+app approval. Consequently Phase 5.7 has no completed interactive, responsive
+viewport or keyboard browser checks. Temporary frontend-only HTTP fixtures were
+stopped without contacting a backend or database. The historical 12 Phase 5.6
+simulated browser scenarios below were not rerun and are not Phase 5.7 validation.
+Live backend/CORS, real tiles, focus/keyboard interaction, resize/RTL/mobile layout
+and live dataset/coordinate quality remain unverified. No dependencies, backend,
+proxy, default-mode or publication-policy configuration was changed.
+
 Earlier phase reports below describe their historical gates and validation.
 Phase 5.6 supersedes the old shared closed gate for basic public browsing/identity.
 

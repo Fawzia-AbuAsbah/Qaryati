@@ -3,6 +3,7 @@ import { toBackendId } from './villageAdapters.js'
 import { adaptPublicVillagePage, toBackendPage } from './paginationAdapters.js'
 import { listVillages as listMockVillages } from './villageService.js'
 import { createVillageAccess, publicVillageCapabilities, villageDataMode } from './villageMode.js'
+import { publicVillageSearch } from './publicVillageSearch.js'
 
 export const villageSortFields = Object.freeze(['id', 'nameAr', 'nameEn'])
 
@@ -22,11 +23,7 @@ function listingQuery(options) {
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 || backendPage * pageSize > 2147483647) {
     throw new TypeError('Unsupported pagination')
   }
-  if (typeof query !== 'string') throw new TypeError('Unsupported search')
-  // Match Java String.strip(): non-breaking spaces remain literal search text.
-  // eslint-disable-next-line no-control-regex -- Java whitespace includes these control characters.
-  const term = query.replace(/^[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+$/gu, '')
-  if (term.length > 180) throw new TypeError('Unsupported search')
+  const term = publicVillageSearch(query)
   if (governorate && (governorateId == null || governorateId === '')) throw new ExplorerError('LEGACY_GOVERNORATE_FILTER')
   if (!villageSortFields.includes(sortBy) || typeof sortDir !== 'string' || !['asc', 'desc'].includes(sortDir.toLowerCase())) {
     throw new TypeError('Unsupported sorting')

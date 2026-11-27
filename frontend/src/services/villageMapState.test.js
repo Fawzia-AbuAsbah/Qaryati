@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mapPresentation, mapSelectionMessage, villageMapHref, mapErrorMessage } from './villageMapState.js'
+import { hasMapCoordinates, mapPresentation, mapSelectionMessage, mapSelectionQuery, mapViewport, villageMapHref, mapErrorMessage } from './villageMapState.js'
 import { villageDetailsHref, detailsReturnNavigation } from './villageDetailsState.js'
 import { createVillageMapService, villageMapService } from './villageMapService.js'
 import { createVillageExplorerService } from './villageExplorerService.js'
@@ -92,4 +92,48 @@ test('map errors and selection notices report incomplete data and missing locati
   assert.notEqual(mapErrorMessage({ status: 401 }), mapErrorMessage({ kind: 'network' }))
   for (const selection of ['invalid', 'not-found', 'no-coordinates']) assert.match(mapSelectionMessage(selection), /القرية/)
   assert.equal(mapSelectionMessage('selected'), null)
+})
+
+for (const coordinates of [null, undefined, [], [0], [0, 0, 0], '31,35', {}, [NaN, 35], [31, Infinity], [91, 0], [0, 181], ['31', 35], [null, 0]]) {
+  test(`map boundary excludes malformed pair ${JSON.stringify(coordinates)} from markers and bounds`, () => {
+    const village = { id: '42', coordinates }
+    assert.equal(hasMapCoordinates(village), false)
+    assert.equal(mapViewport([village], village), null)
+    assert.equal(villageMapHref(village, ready, ready), null)
+  })
+}
+
+test('zero valid markers never produce Leaflet bounds or a fabricated center', () => {
+  assert.equal(mapViewport([], null), null)
+  assert.equal(mapViewport([{ id: '42', coordinates: null }], null), null)
+})
+test('one valid marker gets a bounded point view with latitude before longitude, including real zero', () => {
+  const zero = { id: '42', coordinates: [0, 0] }
+  assert.deepEqual(mapViewport([zero], null), { center: [0, 0], zoom: 11 })
+  assert.deepEqual(mapViewport([zero], zero), { center: [0, 0], zoom: 14 })
+  const village = { id: '42', coordinates: [31.9, 35.2] }
+  assert.deepEqual(mapViewport([village], null).center, [31.9, 35.2])
+})
+test('multiple valid markers fit only real coordinates and an actual selected marker gets its own view', () => {
+  const viewport = mapViewport(rows, null)
+  assert.deepEqual(viewport, { bounds: [[31, 35], [0, 0]], options: { padding: [30, 30], maxZoom: 11 } })
+  assert.deepEqual(mapViewport(rows, rows[2]), { center: [0, 0], zoom: 14 })
+  assert.deepEqual(mapViewport(rows, { id: '99', coordinates: [70, 70] }), viewport)
+  assert.deepEqual(mapViewport(rows, { id: '42', coordinates: [70, 70] }).center, rows[0].coordinates)
+})
+test('duplicate coordinate locations remain valid markers with finite bounds', () => {
+  const same = [{ id: '42', coordinates: [31, 35] }, { id: '43', coordinates: [31, 35] }]
+  assert.deepEqual(mapViewport(same, null).bounds, [[31, 35], [31, 35]])
+})
+test('keyboard selection and clearing preserve unrelated and repeated URL parameters', () => {
+  const original = new URLSearchParams('campaign=demo&tag=a&tag=b&village=42')
+  const selected = mapSelectionQuery(original, '44')
+  assert.equal(selected.get('village'), '44')
+  assert.deepEqual(selected.getAll('tag'), ['a', 'b'])
+  assert.equal(selected.get('campaign'), 'demo')
+  const cleared = mapSelectionQuery(selected, null)
+  assert.equal(cleared.has('village'), false)
+  assert.deepEqual(cleared.getAll('tag'), ['a', 'b'])
+  assert.equal(original.get('village'), '42')
+  for (const invalid of ['battir', '0', '042', '9007199254740992', 42]) assert.throws(() => mapSelectionQuery(original, invalid), TypeError)
 })

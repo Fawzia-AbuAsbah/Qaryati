@@ -231,3 +231,44 @@ test('mock Map retains every slug and nullable coordinate without API requests',
   assert.equal(result.items.find(row => row.id === 'beita').coordinates, null)
   assert.equal(request.mock.callCount(), 0)
 })
+
+test('exact traversal limits accept a complete dataset, with no extra page request', async t => {
+  const { service, fetchImpl } = fixture(t, url => {
+    const number = Number(url.searchParams.get('page'))
+    return json(page(number, 2, 4, [village(number * 2 + 1), village(number * 2 + 2)]))
+  }, { maxPages: 2, maxVillages: 4 })
+  assert.equal((await service.listVillages()).total, 4)
+  assert.equal(fetchImpl.mock.callCount(), 2)
+})
+test('default 100-page/10000-record ceiling rejects oversized metadata immediately', async t => {
+  const content = Array.from({ length: 100 }, (_, i) => village(i + 1))
+  const { service, fetchImpl } = fixture(t, () => json(page(0, 100, 10001, content)), { pageSize: 100 })
+  await assert.rejects(service.listVillages(), { code: 'MAP_LIMIT_EXCEEDED' })
+  assert.equal(fetchImpl.mock.callCount(), 1)
+})
+test('a failed intermediate page stops a longer traversal before its last page', async t => {
+  const numbers = []
+  const { service, mockList } = fixture(t, url => {
+    const number = Number(url.searchParams.get('page')); numbers.push(number)
+    return number === 0 ? json(page(0, 2, 5, [village(1), village(2)])) : new Response('', { status: 503 })
+  })
+  await assert.rejects(service.listVillages(), { status: 503 })
+  assert.deepEqual(numbers, [0, 1])
+  assert.equal(mockList.mock.callCount(), 0)
+})
+test('a late failed traversal cannot replace a newer successful load even if transport ignores abort', async t => {
+  let finishOld, started, count = 0
+  const oldStarted = new Promise(resolve => { started = resolve })
+  const { service } = fixture(t, () => {
+    if (++count === 1) return new Promise(resolve => { finishOld = () => resolve(new Response('', { status: 503 })); started() })
+    return json(page(0, 2, 1, [village(77)]))
+  })
+  const runner = createLatestExplorerRequest(), successes = [], errors = []
+  const handlers = { onSuccess: value => successes.push(value), onError: error => errors.push(error) }
+  const old = runner.run(signal => service.listVillages({ signal }), handlers)
+  await oldStarted
+  await runner.run(signal => service.listVillages({ signal }), handlers).done
+  finishOld(); await old.done
+  assert.deepEqual(successes.map(data => data.items[0].id), ['77'])
+  assert.deepEqual(errors, [])
+})
