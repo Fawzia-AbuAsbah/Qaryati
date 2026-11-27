@@ -208,8 +208,8 @@ was not verified in a browser.
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
 Home, Map, Explorer and Details. Authentication, gated Sources and the protected
-VerificationPanel and data-conflict views use the API base independently; audit
-pages are not integrated.
+VerificationPanel, data-conflict views and the read-only audit log page use the API
+base independently.
 
 The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
@@ -783,3 +783,58 @@ mock Details render with no conflict panel, and that anonymous
 `/data-conflicts` and `/sources` redirect to Login. Authenticated UI, live API
 behaviour and role-dependent views remain unverified: no backend or PostgreSQL
 was started and no records or users were created.
+
+## Audit logs (read-only, role contract blocked)
+
+Reviewed `AuditLogController`, `AuditLogService`, `AuditLogResponse`, the
+`AuditLog` entity, `AuditLogRepository`, `AuditAction`, the `audit_logs` schema,
+`DataQualityExceptionHandler` and the controller integration tests. `/auth/me`
+still returns only `username`. No incoming `origin/main` changes were present.
+
+| Endpoint | Parameters | Response |
+| --- | --- | --- |
+| GET `/audit-logs/entity` | `entityType` (non-blank, exact match), `entityId` (positive Long) | `AuditLogResponse[]` |
+| GET `/audit-logs/actor/{actorUserId}` | positive Long | `AuditLogResponse[]` |
+| GET `/audit-logs/action/{action}` | CREATE, UPDATE, DELETE, VERIFY, REJECT or RESTORE | `AuditLogResponse[]` |
+
+Every endpoint requires `hasRole('ADMIN')` on both the controller and the
+service. Results are ordered by `occurredAt` descending. There is no pagination,
+global listing, date range, combined filter or mutation; POST, PUT and DELETE
+return 405. Invalid IDs or actions return 400, a missing session 401 and a
+non-ADMIN user 403. Response fields are `id`, `actorUserId` (nullable),
+`actorLabel`, `entityType`, `entityId`, `action`, `occurredAt`, `beforeData` and
+`afterData` (nullable JSON maps), `correlationId` and `reason` (both nullable).
+
+Entity types are free strings on the backend. Services currently write
+CULTURAL_HERITAGE, DATA_CONFLICT, HERITAGE_SITE, HISTORICAL_EVENT,
+POPULATION_RECORD, SOURCE, VERIFICATION_RECORD, VILLAGE_HISTORY and
+VILLAGE_SOURCE. For VILLAGE_SOURCE, the entity ID is the village ID. The page
+offers these as suggestions only. Matching `AuditLogService.record` and the
+`VARCHAR(80)` column, any non-blank type of at most 80 characters is accepted
+and sent exactly as entered, so historical or other stored types stay
+searchable. Entity results cover only that type and ID, and the page says they
+are not a complete village history.
+
+`auditService.js` reuses AuthProvider's scoped request, the API client and the
+session checks. `auditAccess.js` requires a verified ADMIN through the existing,
+still-closed effective-role contract, so the actual app sends **zero** audit
+requests. The protected `/audit-logs` page uses `RequireAuth`. It keeps exactly
+one query mode in the URL (`mode=entity|actor|action`) and validates it before
+any request. Invalid URL filters send nothing. `auditLogState.js` holds one
+read-only store per canonical query. A filter change, leaving the page, logout
+or a new session cancels the read and clears audit data.
+
+Records show every returned field. Null metadata is labelled unavailable;
+actor names, timestamps and change details are never invented. Snapshots render
+through the shared `StructuredValue` text renderer. Server order is preserved.
+The login return allowlist adds only `/audit-logs`. To reuse the JSON-shape
+checks, `conflictContracts.js` now exports `plainObject` and `jsonValue`; their
+behaviour is unchanged.
+
+Validation: 739 tests passed (29 new audit tests). `npm run build`,
+`npm run lint` and `git diff --check`, including intent-to-add for untracked
+files, passed. Headless Chrome against `vite preview` checked page titles:
+Home, Explorer, mock Details, Map and Login render normally, and the 404 page
+renders. Anonymous `/audit-logs?mode=action&action=CREATE`, `/data-conflicts`
+and `/sources` redirect to Login, and no audit or conflict UI appears in mock
+browsing. Authenticated and live API audit behaviour remain unverified.

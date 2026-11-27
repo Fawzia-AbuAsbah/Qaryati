@@ -12,6 +12,6 @@ export function safeAuthReturnTo(value) {
   let url
   try { url = new URL(value, 'https://qaryati-ui.invalid') } catch { return '/' }
   if (url.origin !== 'https://qaryati-ui.invalid' || url.pathname === '/login') return '/'
-  if (!['/', '/villages', '/map', '/sources', '/data-conflicts'].includes(url.pathname) && !/^\/villages\/[^/]+$/.test(url.pathname)) return '/'
+  if (!['/', '/villages', '/map', '/sources', '/data-conflicts', '/audit-logs'].includes(url.pathname) && !/^\/villages\/[^/]+$/.test(url.pathname)) return '/'
   return `${url.pathname}${url.search}${url.hash}`
 }

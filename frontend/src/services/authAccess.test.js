@@ -21,7 +21,7 @@ test('every role-dependent requirement fails closed, including unsupported and f
 })
 
 test('post-login return URLs stay inside existing routes and preserve query parameters', () => {
-  for (const target of ['/', '/villages?q=%D8%A8%D8%AA%D9%8A%D8%B1&page=2', '/villages/42', '/map?village=42&tag=a&tag=b#location', '/sources?source=42', '/data-conflicts?status=OPEN']) {
+  for (const target of ['/', '/villages?q=%D8%A8%D8%AA%D9%8A%D8%B1&page=2', '/villages/42', '/map?village=42&tag=a&tag=b#location', '/sources?source=42', '/data-conflicts?status=OPEN', '/audit-logs?mode=actor&actorUserId=5']) {
     assert.equal(safeAuthReturnTo(target), target)
   }
   for (const target of [null, {}, 'https://evil.example', '//evil.example', '/\\evil.example', '/login', '/login?from=/login',

@@ -34,10 +34,10 @@ export function conflictNextAction(status) {
   return status === 'OPEN' ? 'review' : status === 'IN_REVIEW' ? 'resolve' : null
 }
 
-const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+export const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value))
 
-function jsonValue(value, depth = 0) {
+export function jsonValue(value, depth = 0) {
   if (depth > 32) return false
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
   if (typeof value === 'number') return Number.isFinite(value)
