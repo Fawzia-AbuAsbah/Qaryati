@@ -44,7 +44,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/v1/public/villages",
-                                "/api/v1/public/villages/{id}"
+                                "/api/v1/public/villages/{id}",
+                                "/api/v1/public/governorates",
+                                "/api/v1/public/local-authorities"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
