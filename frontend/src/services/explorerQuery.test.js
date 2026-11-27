@@ -41,9 +41,10 @@ test('clearing filters preserves unrelated URL parameters and does not mutate in
   assert.equal(params.get('page'), '4')
 })
 
-test('changing governorate selection removes the old source-specific filter and preserves unrelated parameters', () => {
-  const params = new URLSearchParams('governorate=بيت+لحم&governorateId=2&campaign=demo')
+test('changing governorate selection removes incompatible geographic filters and preserves unrelated parameters', () => {
+  const params = new URLSearchParams('governorate=بيت+لحم&governorateId=2&localAuthorityId=7&campaign=demo')
   assert.equal(updateExplorerQuery(params, 'governorateId', '9').has('governorate'), false)
+  assert.equal(updateExplorerQuery(params, 'governorateId', '9').has('localAuthorityId'), false)
   assert.equal(updateExplorerQuery(params, 'governorate', 'نابلس').has('governorateId'), false)
   assert.equal(updateExplorerQuery(params, 'governorateId', '').get('campaign'), 'demo')
   assert.equal(readExplorerQuery(new URLSearchParams('sortDir=DESC')).sortDir, 'desc')

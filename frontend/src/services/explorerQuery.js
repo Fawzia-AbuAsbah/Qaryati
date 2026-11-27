@@ -14,7 +14,10 @@ export function updateExplorerQuery(params, name, value) {
   const next = new URLSearchParams(params)
   if (value === '' || value == null) next.delete(name)
   else next.set(name, String(value))
-  if (name === 'governorateId') next.delete('governorate')
+  if (name === 'governorateId') {
+    next.delete('governorate')
+    next.delete('localAuthorityId')
+  }
   if (name === 'governorate') next.delete('governorateId')
   if (name !== 'page') next.delete('page')
   return next

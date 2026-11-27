@@ -123,7 +123,7 @@ test('login return URLs accept the protected audit page with its filters only', 
 })
 
 test('disabled identity capability sends no HTTP and mock browsing makes no audit requests', async () => {
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(villageDataMode, 'mock')
   const request = () => assert.fail('No public API or audit requests')
   await assert.rejects(createVillageDetailsService({ mode: 'api', identityVerified: false, request }).getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })

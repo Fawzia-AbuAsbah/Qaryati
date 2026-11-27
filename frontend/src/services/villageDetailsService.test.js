@@ -21,7 +21,7 @@ function fixture(t, handler = () => json(village()), options = {}) {
 
 test('Details defaults to mock while only verified basic public capabilities are enabled', () => {
   assert.equal(villageDetailsService.mode, 'mock')
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(Object.isFrozen(publicVillageCapabilities), true)
 })
 
@@ -137,12 +137,25 @@ test('nullable fields and partial coordinates stay missing without invented name
   assert.equal(identity.areaKm2, null)
   for (const field of ['governorate', 'localAuthority', 'description', 'status', 'population', 'history', 'images']) assert.equal(Object.hasOwn(identity, field), false)
 })
-test('basic identity availability never authorizes catalogue reads', async t => {
-  const { service, fetchImpl } = fixture(t)
-  await assert.rejects(service.getGovernorates(), { code: 'PUBLIC_CATALOGUE_UNAVAILABLE' })
-  assert.equal(fetchImpl.mock.callCount(), 0)
+test('confirmed public catalogue reads remain separate from the eleven-field identity endpoint', async t => {
+  const calls = []
+  const service = createVillageDetailsService({ mode: 'api', request: createApiClient({ fetchImpl: (url, init) => {
+    const parsed = new URL(url, 'https://frontend.example.test')
+    calls.push({ parsed, init })
+    assert.equal(init.method, 'GET')
+    assert.equal(init.credentials, 'omit')
+    assert.equal(init.headers.has('Authorization'), false)
+    if (parsed.pathname === '/api/v1/public/governorates') return json([{ id: 2, nameAr: 'Bethlehem', nameEn: null }])
+    if (parsed.pathname === '/api/v1/public/local-authorities') return json([{ id: 7, nameAr: 'Council', nameEn: null, governorateId: 2 }])
+    if (parsed.pathname === '/api/v1/public/villages/42') return json(village())
+    assert.fail(`Unexpected public endpoint: ${parsed.pathname}`)
+  } }) })
+  assert.equal((await service.getGovernorates())[0].backendId, 2)
+  assert.equal((await service.getLocalAuthorities({ governorateId: '2' }))[0].backendId, 7)
   assert.equal((await service.getVillage('42')).backendId, 42)
-  assert.equal(fetchImpl.mock.callCount(), 1)
+  assert.deepEqual(calls.map(({ parsed }) => [parsed.pathname, parsed.search]), [
+    ['/api/v1/public/governorates', ''], ['/api/v1/public/local-authorities', '?governorateId=2'], ['/api/v1/public/villages/42', ''],
+  ])
 })
 for (const section of ['overviews', 'events', 'culture', 'sites', 'population', 'agriculture', 'community', 'economicActivities', 'not-an-endpoint', '__proto__']) {
   test(`unsupported public section ${section} never downloads protected or unapproved records`, async t => {

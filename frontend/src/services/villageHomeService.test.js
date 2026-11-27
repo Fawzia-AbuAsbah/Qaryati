@@ -10,7 +10,7 @@ import { createVillageExplorerService } from './villageExplorerService.js'
 
 test('all application data services keep mock default and independent public capabilities', () => {
   for (const service of [villageHomeService, villageMapService, villageExplorerService, villageDetailsService]) assert.equal(service.mode, 'mock')
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
 })
 
 for (const query of ['بتير', ' بَتّير & أرطاس ', 'قرية?status=DRAFT&villageId=42', '100%_!', '', '  ']) {

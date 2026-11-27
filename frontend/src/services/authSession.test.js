@@ -343,7 +343,7 @@ test('logout aborts protected requests; dispose cleans timers and can be reused 
 test('authentication is independent of publication approval and preserves default mock browsing', async t => {
   const { store, calls } = fixture(t)
   const forbiddenRequest = () => { assert.fail('An explicitly disabled browsing capability must prevent every API request') }
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(villageDataMode, 'mock')
   await store.login(credentials) // Auth and a disabled public capability remain independent.
   const apiVillages = createVillageExplorerService({ mode: 'api', browsingVerified: false, request: forbiddenRequest })

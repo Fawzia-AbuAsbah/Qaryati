@@ -2,7 +2,7 @@
 export const publicVillageCapabilities = Object.freeze({
   browsing: true,
   identity: true,
-  geographicCatalogues: false,
+  geographicCatalogues: true,
   richSections: false,
 })
 export const villageDataMode = import.meta.env?.VITE_VILLAGE_EXPLORER_MODE?.trim() || 'mock'

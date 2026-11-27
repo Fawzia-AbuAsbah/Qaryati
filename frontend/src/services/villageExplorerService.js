@@ -4,6 +4,7 @@ import { adaptPublicVillagePage, toBackendPage } from './paginationAdapters.js'
 import { listVillages as listMockVillages } from './villageService.js'
 import { createVillageAccess, publicVillageCapabilities, villageDataMode } from './villageMode.js'
 import { publicVillageSearch } from './publicVillageSearch.js'
+import { adaptPublicGovernorateCatalogue, adaptPublicLocalAuthorityCatalogue } from './publicGeographicCatalogueAdapters.js'
 
 export const villageSortFields = Object.freeze(['id', 'nameAr', 'nameEn'])
 
@@ -38,14 +39,31 @@ function listingQuery(options) {
 
 export function createVillageExplorerService({
   mode = 'mock', browsingVerified = publicVillageCapabilities.browsing,
+  geographicCataloguesVerified = publicVillageCapabilities.geographicCatalogues,
   request = apiClient, mockList = listMockVillages,
 } = {}) {
   const access = createVillageAccess({ mode, contractVerified: browsingVerified })
 
-  async function listGovernorates({ signal } = {}) {
+  function requireCatalogues() {
     access.requireApi()
+    if (geographicCataloguesVerified !== true) throw new ExplorerError('PUBLIC_CATALOGUES_UNCONFIRMED')
+  }
+
+  async function listGovernorates({ signal } = {}) {
+    requireCatalogues()
     signal?.throwIfAborted()
-    throw new ExplorerError('PUBLIC_CATALOGUE_UNAVAILABLE')
+    const dto = await request('/public/governorates', { signal })
+    signal?.throwIfAborted()
+    return adaptPublicGovernorateCatalogue(dto).items
+  }
+
+  async function listLocalAuthorities({ governorateId, signal } = {}) {
+    requireCatalogues()
+    signal?.throwIfAborted()
+    const query = governorateId == null || governorateId === '' ? undefined : { governorateId: toBackendId(String(governorateId)) }
+    const dto = await request('/public/local-authorities', { query, signal })
+    signal?.throwIfAborted()
+    return adaptPublicLocalAuthorityCatalogue(dto).items
   }
 
   async function listVillages(options = {}) {
@@ -75,12 +93,12 @@ export function createVillageExplorerService({
     }
   }
 
-  return { mode, available: access.available, listGovernorates, listVillages }
+  return { mode, available: access.available, listGovernorates, listLocalAuthorities, listVillages }
 }
 
 export function explorerErrorMessage(error) {
   if (error?.code === 'PUBLIC_CONTRACTS_UNCONFIRMED') return 'عرض بيانات القرى من الخدمة غير متاح حاليًا.'
-  if (error?.code === 'PUBLIC_CATALOGUE_UNAVAILABLE') return 'أسماء المحافظات والهيئات المحلية غير متاحة للعامة حاليًا.'
+  if (error?.code === 'PUBLIC_CATALOGUES_UNCONFIRMED') return 'تكامل الفهارس الجغرافية العامة غير متاح حاليًا.'
   if (error?.code === 'INVALID_MODE') return 'إعداد مصدر بيانات القرى غير صالح.'
   if (error?.code === 'LEGACY_GOVERNORATE_FILTER') return 'مرشّح المحافظة المحفوظ يستخدم اسمًا تجريبيًا لا يدعمه هذا المصدر. امسح الفلاتر للمتابعة.'
   if (error?.code === 'PAGINATION_CHANGED') return 'تغيّر عدد صفحات النتائج أثناء التحميل. أعد المحاولة للحصول على الصفحة الحالية.'

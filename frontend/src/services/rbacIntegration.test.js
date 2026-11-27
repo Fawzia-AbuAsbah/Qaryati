@@ -236,7 +236,7 @@ for (const mode of ['anonymous', 'logout', 'expired', 'replacement']) {
 test('effective roles and basic public capabilities are independent; catalogues/rich sections remain disabled and mock stays default', () => {
   assert.equal(effectiveRolesContractVerified, true)
   assert.equal(effectiveSourceRolesVerified, true)
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(villageDataMode, 'mock')
 })
 

@@ -64,11 +64,33 @@ test('mock selection retains the existing service contract without requesting HT
   assert.equal(fetchImpl.mock.callCount(), 0)
 })
 
-test('unavailable public catalogue never requests protected governorates', async t => {
-  const { service, fetchImpl } = fixture(t)
-  await assert.rejects(service.listGovernorates(), { code: 'PUBLIC_CATALOGUE_UNAVAILABLE' })
-  assert.equal(fetchImpl.mock.callCount(), 0)
+test('confirmed public catalogues use anonymous GET requests with the exact optional governorate filter', async t => {
+  const calls = []
+  const service = createVillageExplorerService({ mode: 'api', request: createApiClient({ fetchImpl: (url, init) => {
+    const parsed = new URL(url, 'https://frontend.example.test')
+    calls.push({ parsed, init })
+    assert.equal(init.method, 'GET')
+    assert.equal(init.credentials, 'omit')
+    assert.equal(init.headers.has('Authorization'), false)
+    if (parsed.pathname === '/api/v1/public/governorates') return json([{ id: 2, nameAr: 'Bethlehem', nameEn: null }])
+    if (parsed.pathname === '/api/v1/public/local-authorities') return json([{ id: 7, nameAr: 'Council', nameEn: null, governorateId: 2 }])
+    assert.fail(`Unexpected public endpoint: ${parsed.pathname}`)
+  } }) })
+  assert.deepEqual(await service.listGovernorates(), [{ id: '2', backendId: 2, nameAr: 'Bethlehem', nameEn: null, name: 'Bethlehem' }])
+  assert.deepEqual(await service.listLocalAuthorities({ governorateId: '2' }), [{ id: '7', backendId: 7, nameAr: 'Council', nameEn: null, name: 'Council', governorateId: 2 }])
+  assert.deepEqual(calls.map(({ parsed }) => [parsed.pathname, parsed.search]), [
+    ['/api/v1/public/governorates', ''], ['/api/v1/public/local-authorities', '?governorateId=2'],
+  ])
 })
+
+for (const governorateId of ['0', '-1', '02', 'authority', '9007199254740992']) {
+  test(`invalid local-authority governorate filter ${governorateId} is rejected before HTTP`, async t => {
+    const request = t.mock.fn(() => assert.fail('Invalid catalogue filters must not send HTTP'))
+    const service = createVillageExplorerService({ mode: 'api', request })
+    await assert.rejects(service.listLocalAuthorities({ governorateId }), TypeError)
+    assert.equal(request.mock.callCount(), 0)
+  })
+}
 
 test('HTTP integration encodes Arabic search, ID filters, sorting and zero-based pagination', async t => {
   const controller = new AbortController()

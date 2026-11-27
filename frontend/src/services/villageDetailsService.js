@@ -3,14 +3,20 @@ import { toBackendId } from './villageAdapters.js'
 import { adaptPublicVillageDetail } from './publicVillageAdapters.js'
 import { createVillageAccess, publicVillageCapabilities, villageDataMode, VillageAccessError } from './villageMode.js'
 import { getVillage as getMockVillage } from './villageService.js'
+import { adaptPublicGovernorateCatalogue, adaptPublicLocalAuthorityCatalogue } from './publicGeographicCatalogueAdapters.js'
 
 function villageId(routeId) {
   try { return toBackendId(routeId) } catch { throw new VillageAccessError('INVALID_VILLAGE_ID') }
 }
 
 export function createVillageDetailsService({ mode = 'mock', identityVerified = publicVillageCapabilities.identity,
+  geographicCataloguesVerified = publicVillageCapabilities.geographicCatalogues,
   request = apiClient, mockGet = getMockVillage } = {}) {
   const access = createVillageAccess({ mode, contractVerified: identityVerified })
+  function requireCatalogues() {
+    access.requireApi()
+    if (geographicCataloguesVerified !== true) throw new VillageAccessError('PUBLIC_CATALOGUES_UNCONFIRMED')
+  }
   async function getVillage(routeId, options = {}) {
     const { signal } = options
     signal?.throwIfAborted()
@@ -34,15 +40,24 @@ export function createVillageDetailsService({ mode = 'mock', identityVerified = 
     return village
   }
   async function getGovernorates({ signal } = {}) {
-    signal?.throwIfAborted(); access.requireApi()
-    throw new VillageAccessError('PUBLIC_CATALOGUE_UNAVAILABLE')
+    signal?.throwIfAborted(); requireCatalogues()
+    const dto = await request('/public/governorates', { signal })
+    signal?.throwIfAborted()
+    return adaptPublicGovernorateCatalogue(dto).items
+  }
+  async function getLocalAuthorities({ governorateId, signal } = {}) {
+    signal?.throwIfAborted(); requireCatalogues()
+    const query = governorateId == null || governorateId === '' ? undefined : { governorateId: toBackendId(String(governorateId)) }
+    const dto = await request('/public/local-authorities', { query, signal })
+    signal?.throwIfAborted()
+    return adaptPublicLocalAuthorityCatalogue(dto).items
   }
   async function listSection(routeId, _section, { signal } = {}) {
     signal?.throwIfAborted(); villageId(routeId); access.requireApi()
     // Existing protected Heritage handlers are not public section contracts.
     throw new VillageAccessError('UNAVAILABLE_SECTION')
   }
-  return { mode, available: access.available, getVillage, getGovernorates, listSection }
+  return { mode, available: access.available, getVillage, getGovernorates, getLocalAuthorities, listSection }
 }
 
 export const villageDetailsService = createVillageDetailsService({ mode: villageDataMode })

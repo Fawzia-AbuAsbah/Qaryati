@@ -200,7 +200,7 @@ test('cleanup cancels pre-dispatch work, detaches listeners and supports a Stric
 })
 
 test('disabled identity capability sends no HTTP and mock browsing makes no verification requests', async () => {
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(villageDataMode, 'mock')
   const request = () => assert.fail('No public API or protected verification requests')
   const api = createVillageDetailsService({ mode: 'api', identityVerified: false, request })
