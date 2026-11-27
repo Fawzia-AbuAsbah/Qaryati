@@ -41,6 +41,11 @@ public class SecurityConfig {
                                 HttpMethod.POST,
                                 "/api/v1/auth/login"
                         ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/public/villages",
+                                "/api/v1/public/villages/{id}"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
 
