@@ -13,12 +13,13 @@ import { memberRoutes } from './services/authAccess.js'
 import SourcesPage from './pages/SourcesPage.jsx'
 import DataConflictsPage from './pages/DataConflictsPage.jsx'
 import AuditLogsPage from './pages/AuditLogsPage.jsx'
+import PopulationRecordsPage from './pages/PopulationRecordsPage.jsx'
 import './styles/site.css'
 import './styles/auth.css'
 import './styles/sources.css'
 
 const MapPage = lazy(() => import('./pages/MapPage.jsx'))
-const memberPages = { '/sources': SourcesPage, '/data-conflicts': DataConflictsPage, '/audit-logs': AuditLogsPage }
+const memberPages = { '/population-records': PopulationRecordsPage, '/sources': SourcesPage, '/data-conflicts': DataConflictsPage, '/audit-logs': AuditLogsPage }
 
 const pageTitles = [
   ['/', 'الرئيسية'],
@@ -26,6 +27,7 @@ const pageTitles = [
   ['/villages/:id', 'تفاصيل القرية'],
   ['/map', 'خريطة القرى'],
   ['/login', 'تسجيل الدخول'],
+  ['/population-records', 'سجلات السكان'],
   ['/sources', 'المصادر'],
   ['/data-conflicts', 'تعارضات البيانات'],
   ['/audit-logs', 'سجل التدقيق'],

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { authAccessDecision, safeAuthReturnTo } from './authAccess.js'
+import { authAccessDecision, memberRoutes, safeAuthReturnTo } from './authAccess.js'
 
 const now = 10000
 const authenticated = { status: 'authenticated', user: { username: 'reader', roles: null, rolesVerified: false }, expiresAt: now + 1000 }
@@ -34,11 +34,20 @@ test('generic guards use explicit OR permissions without implicit role inheritan
 })
 
 test('post-login return URLs stay inside existing routes and preserve query parameters', () => {
-  for (const target of ['/', '/villages?q=%D8%A8%D8%AA%D9%8A%D8%B1&page=2', '/villages/42', '/map?village=42&tag=a&tag=b#location', '/sources?source=42', '/data-conflicts?status=OPEN', '/audit-logs?mode=actor&actorUserId=5']) {
+  for (const target of ['/', '/villages?q=%D8%A8%D8%AA%D9%8A%D8%B1&page=2', '/villages/42', '/map?village=42&tag=a&tag=b#location', '/population-records?villageId=7&page=0&size=20', '/sources?source=42', '/data-conflicts?status=OPEN', '/audit-logs?mode=actor&actorUserId=5']) {
     assert.equal(safeAuthReturnTo(target), target)
   }
   for (const target of [null, {}, 'https://evil.example', '//evil.example', '/\\evil.example', '/login', '/login?from=/login',
     '/sources/42', 'javascript:alert(1)', 'http://[', '/villages/../login', '/\n/evil.example']) {
     assert.equal(safeAuthReturnTo(target), '/')
+  }
+})
+
+test('Population Records is an authenticated route for every application role', () => {
+  const route = memberRoutes.find(item => item.to === '/population-records')
+  assert.ok(route)
+  for (const role of ['VIEWER', 'EDITOR', 'ADMIN']) {
+    const session = { ...authenticated, user: { username: role, roles: [role], rolesVerified: true } }
+    assert.equal(authAccessDecision(session, { requiredRoles: route.requiredRoles, now }), 'allow')
   }
 })
