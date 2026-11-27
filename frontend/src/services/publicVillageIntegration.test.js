@@ -11,6 +11,7 @@ import { createVillageMapService } from './villageMapService.js'
 import { createVillageHomeService, homeSearchLocation } from './villageHomeService.js'
 
 const dto = { id: 42, nameAr: 'Synthetic village', nameEn: null, governorateId: 2, localAuthorityId: null, latitude: 31, longitude: 35 }
+const detailDto = { ...dto, nameOrigin: null, locationDescription: 'Synthetic location', elevationM: -430.25, areaKm2: 1.125 }
 const page = { content: [dto], number: 0, size: 6, totalElements: 1, totalPages: 1, numberOfElements: 1,
   first: true, last: true, hasNext: false, hasPrevious: false, empty: false }
 const json = value => new Response(JSON.stringify(value))
@@ -30,7 +31,7 @@ for (const roles of [['VIEWER'], ['EDITOR'], ['ADMIN'], ['VIEWER', 'ADMIN'], []]
       assert.equal(init.headers.has('Authorization'), false)
       assert.equal(init.credentials, 'omit')
       if (publicStatus !== 200) return new Response('', { status: publicStatus })
-      return json(url.includes('/42') ? dto : page)
+      return json(url.includes('/42') ? detailDto : page)
     } })
     const store = createAuthSession({ service: createAuthService({ request: client }) })
     t.after(() => store.dispose())
@@ -57,7 +58,7 @@ test('public identity availability never grants source permission to anonymous, 
     calls.push({ url, init })
     if (url.endsWith('/login')) return json({ accessToken: 'simulated-token', tokenType: 'Bearer', expiresIn: 600 })
     if (url.endsWith('/auth/me')) return json({ username: 'synthetic', roles: currentRoles })
-    if (url === '/api/v1/public/villages/42') return json(dto)
+    if (url === '/api/v1/public/villages/42') return json(detailDto)
     assert.fail(`Denied source operation sent HTTP: ${url}`)
   } })
   const store = createAuthSession({ service: createAuthService({ request: client }) })
@@ -81,7 +82,7 @@ test('public identity availability never grants source permission to anonymous, 
 
 test('basic browse and identity switches are independent', async t => {
   const calls = []
-  const request = t.mock.fn(async path => { calls.push(path); return path.endsWith('/42') ? dto : page })
+  const request = t.mock.fn(async path => { calls.push(path); return path.endsWith('/42') ? detailDto : page })
   const browse = createVillageExplorerService({ mode: 'api', browsingVerified: true, request })
   const noIdentity = createVillageDetailsService({ mode: 'api', identityVerified: false, request })
   await browse.listVillages()
@@ -93,6 +94,31 @@ test('basic browse and identity switches are independent', async t => {
   await assert.rejects(identity.getGovernorates(), { code: 'PUBLIC_CATALOGUE_UNAVAILABLE' })
   await assert.rejects(identity.listSection('42', 'population'), { code: 'UNAVAILABLE_SECTION' })
   assert.deepEqual(calls, ['/public/villages', '/public/villages/42'])
+})
+
+test('Details accepts eleven fields while Explorer and Map still reject detail-shaped collection rows', async t => {
+  let expandedCollection = false
+  const request = t.mock.fn(async (path, options) => {
+    if (path === '/public/villages/42') return detailDto
+    assert.equal(path, '/public/villages')
+    return { ...page, size: options.query.size, content: [expandedCollection ? detailDto : dto] }
+  })
+  const listing = createVillageExplorerService({ mode: 'api', request })
+  const map = createVillageMapService({ mode: 'api', request })
+  const details = createVillageDetailsService({ mode: 'api', request })
+  for (const result of [await listing.listVillages(), await map.listVillages()]) {
+    assert.equal(result.items[0].backendId, 42)
+    for (const field of ['nameOrigin', 'locationDescription', 'elevationM', 'areaKm2']) {
+      assert.equal(Object.hasOwn(result.items[0], field), false)
+    }
+  }
+  const detail = await details.getVillage('42')
+  assert.equal(detail.locationDescription, detailDto.locationDescription)
+  assert.equal(detail.elevationM, detailDto.elevationM)
+  expandedCollection = true
+  await assert.rejects(listing.listVillages(), TypeError)
+  await assert.rejects(map.listVillages(), TypeError)
+  assert.equal(request.mock.callCount(), 5)
 })
 
 for (const sortBy of ['createdAt', 'updatedAt']) {

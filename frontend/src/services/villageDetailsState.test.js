@@ -8,7 +8,9 @@ import { createApiClient } from './apiClient.js'
 test('Explorer connects numeric API cards only to an available matching Details integration', async t => {
   const fetchImpl = t.mock.fn(async url => {
     assert.equal(url, '/api/v1/public/villages/42')
-    return new Response(JSON.stringify({ id: 42, nameAr: 'بتير', nameEn: null, governorateId: 2, localAuthorityId: null, latitude: null, longitude: null }))
+    return new Response(JSON.stringify({ id: 42, nameAr: 'بتير', nameEn: null, governorateId: 2,
+      localAuthorityId: null, latitude: null, longitude: null,
+      nameOrigin: null, locationDescription: 'Synthetic location', elevationM: null, areaKm2: null }))
   })
   const request = createApiClient({ fetchImpl })
   const explorer = createVillageExplorerService({ mode: 'api', browsingVerified: true, request })

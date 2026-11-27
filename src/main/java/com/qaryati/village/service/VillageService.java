@@ -2,6 +2,7 @@ package com.qaryati.village.service;
 
 import com.qaryati.common.exception.DuplicateResourceException;
 import com.qaryati.common.exception.ResourceNotFoundException;
+import com.qaryati.village.dto.PublicVillageDetailResponse;
 import com.qaryati.village.dto.PublicVillageResponse;
 import com.qaryati.village.dto.VillageRequest;
 import com.qaryati.village.dto.VillageResponse;
@@ -87,11 +88,11 @@ public class VillageService {
     }
 
     @Transactional(readOnly = true)
-    public PublicVillageResponse getPublicById(Long id) {
+    public PublicVillageDetailResponse getPublicById(Long id) {
         validateVillageId(id);
         Village village = repository.findByIdAndStatusAndArchivedAtIsNull(id, VillageStatus.VERIFIED)
                 .orElseThrow(() -> new ResourceNotFoundException("Village", id));
-        return PublicVillageResponse.from(mapper.toResponse(village));
+        return PublicVillageDetailResponse.from(mapper.toResponse(village));
     }
 
     @Transactional(readOnly = true)
