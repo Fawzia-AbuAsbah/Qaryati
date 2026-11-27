@@ -1,14 +1,14 @@
 import { apiClient } from './apiClient.js'
 import { createVillageExplorerService } from './villageExplorerService.js'
-import { createVillageAccess, publicVillageContractsVerified, villageDataMode, VillageAccessError } from './villageMode.js'
+import { createVillageAccess, publicVillageCapabilities, villageDataMode, VillageAccessError } from './villageMode.js'
 import { listMapVillages } from './villageService.js'
 
 export function createVillageMapService({
-  mode = 'mock', publicationVerified = publicVillageContractsVerified, request = apiClient,
+  mode = 'mock', browsingVerified = publicVillageCapabilities.browsing, request = apiClient,
   pageSize = 100, maxPages = 100, maxVillages = 10000, mockList = listMapVillages,
 } = {}) {
-  const access = createVillageAccess({ mode, publicationVerified })
-  const villages = createVillageExplorerService({ mode, publicationVerified, request })
+  const access = createVillageAccess({ mode, contractVerified: browsingVerified })
+  const villages = createVillageExplorerService({ mode, browsingVerified, request })
 
   async function listVillages({ signal } = {}) {
     signal?.throwIfAborted()
@@ -27,7 +27,7 @@ export function createVillageMapService({
     let total, totalPages, previousId = 0
     for (let page = 1; page <= maxPages; page++) {
       signal?.throwIfAborted()
-      // Reuse the listing service, including its adapters, catalog and gate.
+      // Reuse public listing/adapters and the basic-browsing capability.
       const result = await villages.listVillages({ page, pageSize, sortBy: 'id', sortDir: 'asc', signal })
       signal?.throwIfAborted()
       if (result.page !== page || result.pageSize !== pageSize || result.outOfRange) {

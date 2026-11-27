@@ -3,8 +3,7 @@ import test from 'node:test'
 import { createApiClient } from './apiClient.js'
 import { createVillageExplorerService, explorerErrorMessage, villageExplorerService, villageSortFields } from './villageExplorerService.js'
 
-const governorates = [{ id: 2, nameAr: 'بيت لحم', nameEn: 'Bethlehem', code: 'BTH' }, { id: 9, nameAr: 'نابلس' }]
-const village = (id = 42, overrides = {}) => ({ id, governorateId: 2, nameAr: 'بتير', latitude: null, longitude: null, status: 'DRAFT', ...overrides })
+const village = (id = 42, overrides = {}) => ({ id, governorateId: 2, localAuthorityId: null, nameAr: 'بتير', nameEn: null, latitude: null, longitude: null, ...overrides })
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status })
 
 function page(number = 0, size = 6, total = 1, content = [village()]) {
@@ -17,22 +16,26 @@ function page(number = 0, size = 6, total = 1, content = [village()]) {
 }
 
 function fixture(t, handler = () => json(page()), overrides = {}) {
-  const fetchImpl = t.mock.fn((url, init) => handler(new URL(url, 'https://frontend.example.test'), init))
+  const fetchImpl = t.mock.fn((url, init) => {
+    const parsed = new URL(url, 'https://frontend.example.test')
+    assert.equal(parsed.pathname, '/api/v1/public/villages')
+    return handler(parsed, init)
+  })
   const mockList = t.mock.fn(() => { throw new Error('API failures must not reach mock data') })
   const service = createVillageExplorerService({
-    mode: 'api', publicationVerified: true, request: createApiClient({ fetchImpl }), mockList, ...overrides,
+    mode: 'api', browsingVerified: true, request: createApiClient({ fetchImpl }), mockList, ...overrides,
   })
   return { service, fetchImpl, mockList }
 }
 
-test('the application defaults to mock mode and does not enable API publication', () => {
+test('the application defaults to mock mode even with basic public browsing available', () => {
   assert.equal(villageExplorerService.mode, 'mock')
   assert.equal(villageExplorerService.available, true)
 })
 
-for (const publicationVerified of [undefined, false, 'true', 'false']) {
-  test(`API release gate blocks calls without explicit reviewed confirmation: ${String(publicationVerified)}`, async t => {
-    const { service, fetchImpl, mockList } = fixture(t, undefined, { publicationVerified })
+for (const browsingVerified of [null, false, 'true', 'false']) {
+  test(`disabled browsing capability blocks HTTP: ${String(browsingVerified)}`, async t => {
+    const { service, fetchImpl, mockList } = fixture(t, undefined, { browsingVerified })
     assert.equal(service.available, false)
     await assert.rejects(service.listVillages(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
     await assert.rejects(service.listGovernorates(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
@@ -61,17 +64,10 @@ test('mock selection retains the existing service contract without requesting HT
   assert.equal(fetchImpl.mock.callCount(), 0)
 })
 
-test('governorate service consumes the catalog endpoint and retains nullable names', async t => {
-  const { service, fetchImpl } = fixture(t, url => {
-    assert.equal(url.pathname, '/api/v1/governorates')
-    assert.equal(url.search, '')
-    return json([{ id: 2, nameAr: null, nameEn: 'Bethlehem' }])
-  })
-  const result = await service.listGovernorates()
-  assert.equal(result.items[0].id, '2')
-  assert.equal(result.items[0].name, null)
-  assert.equal(result.namesById.get(2), null)
-  assert.equal(fetchImpl.mock.callCount(), 1)
+test('unavailable public catalogue never requests protected governorates', async t => {
+  const { service, fetchImpl } = fixture(t)
+  await assert.rejects(service.listGovernorates(), { code: 'PUBLIC_CATALOGUE_UNAVAILABLE' })
+  assert.equal(fetchImpl.mock.callCount(), 0)
 })
 
 test('HTTP integration encodes Arabic search, ID filters, sorting and zero-based pagination', async t => {
@@ -82,30 +78,29 @@ test('HTTP integration encodes Arabic search, ID filters, sorting and zero-based
     assert.equal(init.credentials, 'omit')
     assert.equal(init.headers.has('Authorization'), false)
     assert.equal(init.body, undefined)
-    if (url.pathname === '/api/v1/governorates') return json(governorates)
-    assert.equal(url.pathname, '/api/v1/villages')
+    assert.equal(url.pathname, '/api/v1/public/villages')
     assert.deepEqual(Object.fromEntries(url.searchParams), {
-      page: '1', size: '6', search: 'بتير & %_!', governorateId: '2', sortBy: 'nameAr', sortDir: 'desc',
+      page: '1', size: '6', search: 'بتير & %_!', governorateId: '2', localAuthorityId: '7', sortBy: 'nameAr', sortDir: 'desc',
     })
     return json(page(1, 6, 7, [village()]))
   })
-  const result = await service.listVillages({ query: ' بتير & %_! ', governorateId: '2', page: 2, sortBy: 'nameAr', sortDir: 'DESC', signal: controller.signal })
+  const result = await service.listVillages({ query: ' بتير & %_! ', governorateId: '2', localAuthorityId: '7', page: 2, sortBy: 'nameAr', sortDir: 'DESC', signal: controller.signal })
   assert.equal(result.page, 2)
   assert.equal(result.total, 7)
   assert.equal(result.totalPages, 2)
   assert.equal(result.items[0].id, '42')
-  assert.equal(result.items[0].governorate, 'بيت لحم')
+  assert.equal(Object.hasOwn(result.items[0], 'governorate'), false)
   assert.equal(result.items[0].coordinates, null)
-  assert.equal(result.items[0].status, 'DRAFT')
-  assert.deepEqual(result.governorates.map(item => item.id), ['2', '9'])
-  assert.equal(fetchImpl.mock.callCount(), 2)
+  assert.equal(Object.hasOwn(result.items[0], 'status'), false)
+  assert.deepEqual(result.governorates, [])
+  assert.equal(result.governorateNamesAvailable, false)
+  assert.equal(fetchImpl.mock.callCount(), 1)
   assert.equal(mockList.mock.callCount(), 0)
 })
 
 for (const sortBy of villageSortFields) {
   test(`verified backend sort field ${sortBy} is sent without client sorting`, async t => {
     const { service } = fixture(t, url => {
-      if (url.pathname.endsWith('/governorates')) return json([])
       assert.equal(url.searchParams.get('sortBy'), sortBy)
       assert.equal(url.searchParams.has('status'), false)
       assert.equal(url.searchParams.has('search'), false)
@@ -119,16 +114,15 @@ for (const sortBy of villageSortFields) {
 test('out-of-range results are corrected by fetching the actual last page with identical filters', async t => {
   const pages = []
   const { service } = fixture(t, url => {
-    if (url.pathname.endsWith('/governorates')) return json(governorates)
     const number = Number(url.searchParams.get('page'))
     pages.push(number)
     assert.equal(url.searchParams.get('search'), 'بتير')
     assert.equal(url.searchParams.get('governorateId'), '2')
-    assert.equal(url.searchParams.get('sortBy'), 'updatedAt')
+    assert.equal(url.searchParams.get('sortBy'), 'nameAr')
     assert.equal(url.searchParams.get('sortDir'), 'desc')
     return json(page(number, 3, 7, number === 2 ? [village(77)] : []))
   })
-  const result = await service.listVillages({ page: 9, pageSize: 3, query: 'بتير', governorateId: '2', sortBy: 'updatedAt', sortDir: 'desc' })
+  const result = await service.listVillages({ page: 9, pageSize: 3, query: 'بتير', governorateId: '2', sortBy: 'nameAr', sortDir: 'desc' })
   assert.deepEqual(pages, [8, 2])
   assert.equal(result.page, 3)
   assert.equal(result.outOfRange, false)
@@ -138,7 +132,6 @@ test('out-of-range results are corrected by fetching the actual last page with i
 test('empty data at a later page fetches backend page zero before normalizing the URL', async t => {
   const pages = []
   const { service } = fixture(t, url => {
-    if (url.pathname.endsWith('/governorates')) return json([])
     const number = Number(url.searchParams.get('page'))
     pages.push(number)
     return json(page(number, 6, 0, []))
@@ -154,7 +147,6 @@ test('empty data at a later page fetches backend page zero before normalizing th
 test('a failed last-page correction propagates its error without returning the original empty response', async t => {
   const pages = []
   const { service, mockList } = fixture(t, url => {
-    if (url.pathname.endsWith('/governorates')) return json(governorates)
     const number = Number(url.searchParams.get('page'))
     pages.push(number)
     return number === 8 ? json(page(8, 6, 1, [])) : new Response('', { status: 503 })
@@ -165,15 +157,14 @@ test('a failed last-page correction propagates its error without returning the o
 })
 
 test('a normal empty first page needs no corrective request', async t => {
-  const { service, fetchImpl } = fixture(t, url => json(url.pathname.endsWith('/governorates') ? [] : page(0, 6, 0, [])))
+  const { service, fetchImpl } = fixture(t, () => json(page(0, 6, 0, [])))
   assert.equal((await service.listVillages()).empty, true)
-  assert.equal(fetchImpl.mock.callCount(), 2)
+  assert.equal(fetchImpl.mock.callCount(), 1)
 })
 
 test('a shrinking dataset can be corrected twice without returning empty intermediate results', async t => {
   const pages = []
   const { service } = fixture(t, url => {
-    if (url.pathname.endsWith('/governorates')) return json(governorates)
     const number = Number(url.searchParams.get('page'))
     pages.push(number)
     return json(page(number, 3, pages.length === 1 ? 7 : 4, number === 1 ? [village(88)] : []))
@@ -187,18 +178,17 @@ test('a shrinking dataset can be corrected twice without returning empty interme
 test('repeated dataset changes produce an explicit error after bounded correction reads', async t => {
   let count = 0
   const { service, fetchImpl, mockList } = fixture(t, url => {
-    if (url.pathname.endsWith('/governorates')) return json([])
     const totals = [7, 4, 1]
     return json(page(Number(url.searchParams.get('page')), 3, totals[count++], []))
   })
   await assert.rejects(service.listVillages({ page: 9, pageSize: 3 }), { code: 'PAGINATION_CHANGED' })
-  assert.equal(fetchImpl.mock.callCount(), 4)
+  assert.equal(fetchImpl.mock.callCount(), 3)
   assert.equal(mockList.mock.callCount(), 0)
 })
 
 for (const options of [{ page: 0 }, { page: -1 }, { page: 1.5 }, { page: Number.MAX_SAFE_INTEGER },
   { pageSize: 0 }, { pageSize: 101 }, { pageSize: '6' }, { governorateId: 'battir' }, { governorateId: '02' },
-  { governorateId: '9007199254740992' }, { query: null }, { query: 'أ'.repeat(181) }, { sortBy: 'status' }, { sortDir: 'sideways' }]) {
+  { governorateId: '9007199254740992' }, { query: null }, { query: 'أ'.repeat(181) }, { localAuthorityId: 'battir' }, { localAuthorityId: '0' }, { status: 'VERIFIED' }, { createdAt: 'x' }, { updatedAt: 'x' }, { sortBy: 'createdAt' }, { sortBy: 'updatedAt' }, { token: 'secret' }, { sortBy: 'status' }, { sortDir: 'sideways' }]) {
   test(`invalid listing options fail before HTTP: ${JSON.stringify(options).slice(0, 90)}`, async t => {
     const { service, fetchImpl } = fixture(t)
     await assert.rejects(service.listVillages(options), TypeError)
@@ -206,14 +196,14 @@ for (const options of [{ page: 0 }, { page: -1 }, { page: 1.5 }, { page: Number.
   })
 }
 
-test('missing village names and unavailable governorates stay missing without substitutions', async t => {
-  const { service } = fixture(t, url => json(url.pathname.endsWith('/governorates') ? governorates : page(0, 6, 1, [village(42, { nameAr: null, governorateId: 999 })])))
+test('unavailable governorate names and rich metadata are not fabricated', async t => {
+  const { service } = fixture(t, () => json(page(0, 6, 1, [village(42, { governorateId: 999 })])))
   const result = await service.listVillages()
-  assert.equal(result.items[0].name, null)
-  assert.equal(result.items[0].governorate, null)
+  assert.equal(result.items[0].name, 'بتير')
+  assert.equal(Object.hasOwn(result.items[0], 'governorate'), false)
   assert.equal(result.items[0].governorateId, 999)
-  assert.equal(result.items[0].population, null)
-  assert.equal(result.items[0].contentStatus, null)
+  assert.equal(Object.hasOwn(result.items[0], 'population'), false)
+  assert.equal(Object.hasOwn(result.items[0], 'contentStatus'), false)
 })
 
 test('legacy mock governorate-name filters are not silently ignored or guessed as backend IDs', async t => {
@@ -222,30 +212,25 @@ test('legacy mock governorate-name filters are not silently ignored or guessed a
   assert.equal(fetchImpl.mock.callCount(), 0)
 })
 
-for (const endpoint of ['governorates', 'villages']) {
-  for (const status of [401, 403, 429, 500]) {
-    test(`${endpoint} HTTP ${status} is preserved without mock fallback or automatic retry`, async t => {
-      const { service, fetchImpl, mockList } = fixture(t, url => {
-        if (url.pathname.endsWith(`/${endpoint}`)) return new Response('', { status })
-        return json(governorates)
-      })
-      await assert.rejects(service.listVillages(), { kind: 'http', status })
-      assert.equal(fetchImpl.mock.callCount(), endpoint === 'governorates' ? 1 : 2)
-      assert.equal(mockList.mock.callCount(), 0)
-    })
-  }
+for (const status of [401, 403, 429, 500]) {
+  test(`public villages HTTP ${status} is preserved without mock fallback or automatic retry`, async t => {
+    const { service, fetchImpl, mockList } = fixture(t, () => new Response('', { status }))
+    await assert.rejects(service.listVillages(), { kind: 'http', status })
+    assert.equal(fetchImpl.mock.callCount(), 1)
+    assert.equal(mockList.mock.callCount(), 0)
+  })
 }
 
 for (const response of [() => new Response('<html>SPA fallback</html>'), () => json(null), () => json({ content: [] }),
   () => json(page(1, 6, 7, [village()])), () => json(page(0, 3, 1, [village()]))]) {
   test('malformed or mismatched village response is an error rather than empty/mock content', async t => {
-    const { service, mockList } = fixture(t, url => url.pathname.endsWith('/governorates') ? json(governorates) : response())
+    const { service, mockList } = fixture(t, () => response())
     await assert.rejects(service.listVillages())
     assert.equal(mockList.mock.callCount(), 0)
   })
 }
 
-test('malformed governorate catalog fails explicitly', async t => {
+test('malformed public village page fails explicitly', async t => {
   const { service, fetchImpl } = fixture(t, () => json({ content: [] }))
   await assert.rejects(service.listVillages(), TypeError)
   assert.equal(fetchImpl.mock.callCount(), 1)
@@ -267,10 +252,10 @@ test('already-cancelled requests do not send HTTP', async t => {
   assert.equal(fetchImpl.mock.callCount(), 0)
 })
 
-test('cancellation while reading the catalog prevents subsequent village requests', async t => {
+test('cancellation while reading the public response prevents further processing', async t => {
   const controller = new AbortController()
   const { service, fetchImpl } = fixture(t, () => {
-    const response = json(governorates)
+    const response = json(page())
     const text = response.text.bind(response)
     response.text = async () => { const body = await text(); controller.abort(); return body }
     return response
@@ -296,15 +281,14 @@ test('in-flight HTTP cancellation preserves the abort reason and does not retry'
 
 test('cancellation after an out-of-range response prevents its corrective fetch', async t => {
   const controller = new AbortController()
-  const { service, fetchImpl } = fixture(t, url => {
-    if (url.pathname.endsWith('/governorates')) return json(governorates)
+  const { service, fetchImpl } = fixture(t, () => {
     const response = json(page(8, 6, 1, []))
     const text = response.text.bind(response)
     response.text = async () => { const body = await text(); controller.abort(); return body }
     return response
   })
   await assert.rejects(service.listVillages({ page: 9, signal: controller.signal }), error => error === controller.signal.reason)
-  assert.equal(fetchImpl.mock.callCount(), 2)
+  assert.equal(fetchImpl.mock.callCount(), 1)
 })
 
 test('error states have Arabic messages without echoing untrusted backend details', () => {

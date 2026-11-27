@@ -84,7 +84,7 @@ test('mutation responses with an unexpected identity or lifecycle state are reje
   await assert.rejects(fixture(() => response({ ...dto, entityId: 43 }, 201), admin).service.create('42', 'population', values))
 })
 
-test('production roles fail closed: reads work, while status lists and every mutation send nothing', async () => {
+test('unverified roles fail closed: reads work, while status lists and every mutation send nothing', async () => {
   const { service, calls } = fixture(undefined, { roles: ['ADMIN'], verified: false })
   assert.deepEqual(service.permissions(), { read: true, manage: false, create: false, review: false, resolve: false, reason: 'CONFLICT_ROLES_UNAVAILABLE' })
   await service.listForVillage('42')
@@ -93,7 +93,7 @@ test('production roles fail closed: reads work, while status lists and every mut
   }
   assert.equal(calls.length, 1)
   const snapshot = { status: 'authenticated', user: { username: 'admin', roles: ['ADMIN'], rolesVerified: true }, expiresAt: Date.now() + 10000 }
-  const production = createConflictService({ request: () => assert.fail('No production role override'), getSession: () => snapshot })
+  const production = createConflictService({ request: () => assert.fail('No unverified role override'), getSession: () => snapshot, rolesContractVerified: false })
   await assert.rejects(production.create('42', 'population', values), { code: 'CONFLICT_ROLES_UNAVAILABLE' })
 })
 
@@ -228,12 +228,12 @@ test('old services reject responses and further requests after logout, expiry or
   }
 })
 
-test('real auth profile without roles permits village conflict reads while management and mutations stay closed', async t => {
+test('malformed /me roles preserve village conflict reads while management and mutations stay closed', async t => {
   const calls = []
   const client = createApiClient({ fetchImpl: (url, init) => {
     calls.push({ url, init })
     if (url.endsWith('/auth/login')) return response({ accessToken: 'memory-token', tokenType: 'Bearer', expiresIn: 900 })
-    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN'] })
+    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN', 'UNKNOWN'] })
     assert.equal(url, '/api/v1/data-conflicts?entityType=VILLAGE&entityId=42')
     assert.equal(init.headers.get('Authorization'), 'Bearer memory-token')
     return response([dto])

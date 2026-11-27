@@ -1,16 +1,18 @@
 import { apiClient } from './apiClient.js'
 import { createVillageExplorerService } from './villageExplorerService.js'
-import { createVillageAccess, publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { createVillageAccess, publicVillageCapabilities, villageDataMode } from './villageMode.js'
 import { updateExplorerQuery } from './explorerQuery.js'
+import { publicVillageSearch } from './publicVillageSearch.js'
 
-export function homeSearchLocation(value) {
+export function homeSearchLocation(value, { mode = villageDataMode } = {}) {
   if (typeof value !== 'string') throw new TypeError('Home search must be text')
-  return { pathname: '/villages', search: updateExplorerQuery(new URLSearchParams(), 'q', value.trim()).toString() }
+  const term = mode === 'api' ? publicVillageSearch(value) : value.trim()
+  return { pathname: '/villages', search: updateExplorerQuery(new URLSearchParams(), 'q', term).toString() }
 }
 
-export function createVillageHomeService({ mode = 'mock', publicationVerified = publicVillageContractsVerified, request = apiClient } = {}) {
-  const access = createVillageAccess({ mode, publicationVerified })
-  const villages = createVillageExplorerService({ mode, publicationVerified, request })
+export function createVillageHomeService({ mode = 'mock', browsingVerified = publicVillageCapabilities.browsing, request = apiClient } = {}) {
+  const access = createVillageAccess({ mode, contractVerified: browsingVerified })
+  const villages = createVillageExplorerService({ mode, browsingVerified, request })
   async function getFeatured({ signal } = {}) {
     signal?.throwIfAborted()
     if (mode === 'api') {

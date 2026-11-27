@@ -106,7 +106,7 @@ export function sourceErrorMessage(error, mutation = false) {
   if (error?.code === 'AUTH_REQUIRED' || error?.status === 401) return 'انتهت الجلسة أو تعذّر التحقق منها. سجّل الدخول مجددًا.'
   if (error?.code === 'SOURCE_VALIDATION' || error?.status === 400) return 'تحقق من الحقول المطلوبة وصيغة البيانات.'
   if (error?.status === 404) return 'المصدر أو القرية المطلوبة غير موجودة.'
-  if (error?.status === 409) return 'المصدر مرتبط بهذه القرية مسبقًا. لم تُستبدل ملاحظة الربط الموجودة.'
+  if (error?.code === 'SOURCE_ALREADY_LINKED' || error?.status === 409) return 'المصدر مرتبط بهذه القرية مسبقًا. لم تُستبدل ملاحظة الربط الموجودة.'
   if (error?.status === 429) return 'طلبات كثيرة. يرجى المحاولة لاحقًا.'
   if (error?.kind === 'network' || mutation) return mutation ? 'تعذّر تأكيد نتيجة الحفظ. تحقق من البيانات قبل إعادة المحاولة؛ قد يكون الطلب قد نُفّذ.' : 'تعذّر الاتصال بالخدمة. أعد المحاولة لاحقًا.'
   return 'تعذّر تحميل البيانات المطلوبة.'

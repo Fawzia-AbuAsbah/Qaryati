@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient.js'
+import { validRoles } from './authRoles.js'
 
 export class AuthError extends Error {
   constructor(code) {
@@ -37,9 +38,11 @@ export function createAuthService({ request = apiClient } = {}) {
       const dto = await request('/auth/me', { token: bearer(token), signal })
       signal?.throwIfAborted()
       if (!dto || typeof dto.username !== 'string' || !dto.username.trim()) throw new AuthError('INVALID_AUTH_RESPONSE')
-      // This verified endpoint exposes username only. Ignore uncontracted roles,
-      // and never decode JWT claims or infer authority from a username.
-      return Object.freeze({ username: dto.username, roles: null, rolesVerified: false })
+      // Invalid role data closes role-dependent actions without inventing a role
+      // or removing the backend's explicitly authenticated-only read access.
+      const rolesVerified = validRoles(dto.roles)
+      const roles = rolesVerified ? Object.freeze([...dto.roles]) : null
+      return Object.freeze({ username: dto.username, roles, rolesVerified })
     },
     requestWithToken(token, path, options = {}) {
       return request(path, { ...options, token: bearer(token) })

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useConflictService } from '../services/useConflictService.js'
 import { createConflictListState } from '../services/conflictListState.js'
-import { conflictStatuses, conflictStatusLabels } from '../services/conflictContracts.js'
+import { conflictErrorMessage, conflictStatuses, conflictStatusLabels } from '../services/conflictContracts.js'
 import ConflictList from '../components/conflicts/ConflictList.jsx'
 import '../styles/conflicts.css'
 
@@ -13,8 +13,8 @@ export default function DataConflictsPage() {
     <div className="page-banner"><div className="shell"><h1>تعارضات البيانات</h1><p>متابعة التعارضات المسجّلة بين قيم بيانات القرى ومراجعتها وحسمها.</p></div></div>
     <section className="shell section conflicts-page" aria-label="إدارة تعارضات البيانات">
       {!permissions?.manage ? <div className="detail-panel" role="status"><h2>إدارة التعارضات غير متاحة حاليًا</h2>
-        <p>تتطلب قوائم التعارضات حسب الحالة صلاحيات محرر أو مدير. لا تتيح الخدمة حاليًا التحقق من صلاحيات الحساب، لذلك لم تُرسل أي طلبات لإدارة التعارضات.</p>
-        <p>المراجعة والحسم تتطلب صلاحيات مدير، وهي غير متاحة حتى يمكن التحقق من الصلاحيات المطلوبة. يمكن عرض تعارضات قرية محددة من صفحة تفاصيلها عند توفر تكامل القرى.</p>
+        <p>{conflictErrorMessage({ code: permissions?.reason ?? 'AUTH_REQUIRED' })}</p>
+        <p>قوائم الحالة والإنشاء تتطلب محررًا أو مديرًا؛ المراجعة والحسم تتطلب مديرًا. قراءة تعارضات قرية محددة متاحة لأي حساب مسجّل عند توفر تكامل القرى.</p>
       </div> : <ConflictsWorkspace service={service} />}
     </section>
   </>

@@ -78,8 +78,8 @@ test('village/source links preserve exact notes and numeric identities without n
   assert.throws(() => adaptSourceLinks([{ villageId: 42, sourceId: 12, claimNote: null }], { sourceId: '13' }))
 })
 
-test('the deployed role contract blocks every Sources read and write, even with fabricated caller claims', () => {
-  assert.deepEqual(sourcePermissions(session), { read: false, write: false, reason: 'SOURCE_ROLES_UNAVAILABLE' })
+test('an explicitly unverified role contract blocks every Sources read and write', () => {
+  assert.deepEqual(sourcePermissions(session, { rolesContractVerified: false }), { read: false, write: false, reason: 'SOURCE_ROLES_UNAVAILABLE' })
   assert.equal(sourcePermissions(session, { rolesContractVerified: 'true' }).read, false)
   assert.equal(sourcePermissions({ ...session, status: 'anonymous' }).reason, 'AUTH_REQUIRED')
   assert.equal(sourcePermissions({ ...session, expiresAt: Date.now() - 1 }).reason, 'AUTH_REQUIRED')

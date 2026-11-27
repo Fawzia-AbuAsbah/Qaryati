@@ -100,7 +100,7 @@ test('ADMIN is required; missing or unverified roles send zero requests', async 
   const session = (roles, rolesVerified = true) => ({ status: 'authenticated', user: { username: 'x', roles, rolesVerified }, expiresAt: Date.now() + 10000 })
   assert.deepEqual(auditPermissions(session(['ADMIN']), { rolesContractVerified: true }), { read: true, reason: null })
   for (const roles of [['EDITOR'], ['VIEWER'], []]) assert.deepEqual(auditPermissions(session(roles), { rolesContractVerified: true }), { read: false, reason: 'AUDIT_FORBIDDEN' })
-  assert.equal(auditPermissions(session(['ADMIN'])).reason, 'AUDIT_ROLES_UNAVAILABLE')
+  assert.equal(auditPermissions(session(['ADMIN']), { rolesContractVerified: false }).reason, 'AUDIT_ROLES_UNAVAILABLE')
   assert.equal(auditPermissions(session(['ADMIN'], false), { rolesContractVerified: true }).reason, 'AUDIT_ROLES_UNAVAILABLE')
   assert.equal(auditPermissions(session(null), { rolesContractVerified: true }).reason, 'AUDIT_ROLES_UNAVAILABLE')
   assert.equal(auditPermissions({ status: 'anonymous' }).reason, 'AUTH_REQUIRED')
@@ -110,7 +110,7 @@ test('ADMIN is required; missing or unverified roles send zero requests', async 
     assert.equal(calls.length, 0)
   }
   const snapshot = session(['ADMIN'])
-  const production = createAuditService({ request: () => assert.fail('No production role override'), getSession: () => snapshot })
+  const production = createAuditService({ request: () => assert.fail('No unverified role override'), getSession: () => snapshot, rolesContractVerified: false })
   await assert.rejects(production.search(entity), { code: 'AUDIT_ROLES_UNAVAILABLE' })
 })
 
@@ -159,12 +159,12 @@ test('old services reject responses and further requests after logout, expiry or
   }
 })
 
-test('real auth profile without roles sends zero audit requests, even if /auth/me includes uncontracted roles', async t => {
+test('malformed mixed /me roles send zero audit requests after authenticated login', async t => {
   const calls = []
   const client = createApiClient({ fetchImpl: url => {
     calls.push(url)
     if (url.endsWith('/auth/login')) return response({ accessToken: 'memory-token', tokenType: 'Bearer', expiresIn: 900 })
-    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN'] })
+    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN', 'UNKNOWN'] })
     assert.fail(`Unexpected request ${url}`)
   } })
   const store = createAuthSession({ service: createAuthService({ request: client }) })

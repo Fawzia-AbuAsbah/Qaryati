@@ -9,6 +9,7 @@ import VillageDetails from './pages/VillageDetails.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import { AuthProvider } from './auth/AuthProvider.jsx'
 import { RequireAuth } from './auth/RequireAuth.jsx'
+import { memberRoutes } from './services/authAccess.js'
 import SourcesPage from './pages/SourcesPage.jsx'
 import DataConflictsPage from './pages/DataConflictsPage.jsx'
 import AuditLogsPage from './pages/AuditLogsPage.jsx'
@@ -17,6 +18,7 @@ import './styles/auth.css'
 import './styles/sources.css'
 
 const MapPage = lazy(() => import('./pages/MapPage.jsx'))
+const memberPages = { '/sources': SourcesPage, '/data-conflicts': DataConflictsPage, '/audit-logs': AuditLogsPage }
 
 const pageTitles = [
   ['/', 'الرئيسية'],
@@ -54,9 +56,10 @@ function Layout() {
             <Route path="/villages/:id" element={<VillageDetails />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/sources" element={<RequireAuth><SourcesPage /></RequireAuth>} />
-            <Route path="/data-conflicts" element={<RequireAuth><DataConflictsPage /></RequireAuth>} />
-            <Route path="/audit-logs" element={<RequireAuth><AuditLogsPage /></RequireAuth>} />
+            {memberRoutes.map(({ to, requiredRoles }) => {
+              const Page = memberPages[to]
+              return <Route key={to} path={to} element={<RequireAuth requiredRoles={requiredRoles}><Page /></RequireAuth>} />
+            })}
             <Route path="*" element={<PageState title="الصفحة غير موجودة"><Link className="button primary" to="/">العودة إلى الرئيسية</Link></PageState>} />
           </Routes>
         </Suspense>

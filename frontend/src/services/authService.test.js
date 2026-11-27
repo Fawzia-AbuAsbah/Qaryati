@@ -24,7 +24,7 @@ test('login uses the exact verified POST DTO, preserves credential whitespace an
   assert.equal(fetchImpl.mock.callCount(), 1)
 })
 
-test('profile request sends Bearer authentication and accepts username only, without inferring effective roles', async t => {
+test('profile request sends Bearer authentication and accepts effective roles only from /me', async t => {
   const controller = new AbortController()
   const { service } = fixture(t, (url, init) => {
     assert.equal(url, '/api/v1/auth/me')
@@ -36,7 +36,7 @@ test('profile request sends Bearer authentication and accepts username only, wit
     return response({ username: 'actual-profile-name', roles: ['ADMIN'], authorities: ['ROLE_ADMIN'] })
   })
   assert.deepEqual(await service.getProfile('opaque-test-token', { signal: controller.signal }),
-    { username: 'actual-profile-name', roles: null, rolesVerified: false })
+    { username: 'actual-profile-name', roles: ['ADMIN'], rolesVerified: true })
 })
 
 for (const credentials of [null, {}, { username: '', password: 'sample' }, { username: '   ', password: 'sample' },

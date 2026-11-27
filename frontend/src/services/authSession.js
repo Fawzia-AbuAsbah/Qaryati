@@ -2,7 +2,7 @@ import { authService, AuthError, loginValidation, retryDeadline } from './authSe
 
 export function createAuthSession({ service = authService, now = Date.now, schedule = setTimeout, cancelSchedule = clearTimeout } = {}) {
   let token = null, generation = 0, timer = null, loginOperation = null, profileOperation = null
-  let snapshot = Object.freeze({ status: 'anonymous', user: null, expiresAt: null, error: null, reason: null, checking: false, retryAt: null })
+  let snapshot = Object.freeze({ status: 'anonymous', user: null, expiresAt: null, error: null, reason: null, checking: false, rolesStale: false, retryAt: null })
   const listeners = new Set(), operations = new Set()
 
   function publish(patch) {
@@ -24,7 +24,7 @@ export function createAuthSession({ service = authService, now = Date.now, sched
     }
     operations.clear()
     loginOperation = profileOperation = null
-    publish({ status: 'anonymous', user: null, expiresAt: null, error, reason, checking: false })
+    publish({ status: 'anonymous', user: null, expiresAt: null, error, reason, checking: false, rolesStale: false })
   }
   function checkExpiration() {
     if (token && snapshot.expiresAt <= now()) { terminate('expired'); return true }
@@ -84,7 +84,7 @@ export function createAuthSession({ service = authService, now = Date.now, sched
       ensureCurrent(current)
       const user = await service.getProfile(token, { signal: current.controller.signal })
       ensureCurrent(current)
-      publish({ status: 'authenticated', user, error: null, checking: false })
+      publish({ status: 'authenticated', user, error: null, checking: false, rolesStale: false })
       return user
     } catch (error) {
       if (current.generation === generation && loginOperation === current) {
@@ -110,12 +110,15 @@ export function createAuthSession({ service = authService, now = Date.now, sched
       current.controller.signal.throwIfAborted()
       const user = await service.getProfile(capturedToken, { signal: current.controller.signal })
       ensureCurrent(current)
-      publish({ user, checking: false, error: null })
+      publish({ user, checking: false, error: null, rolesStale: false })
       return user
     } catch (error) {
       if (current.generation === generation && profileOperation === current) {
         if (!current.controller.signal.aborted && error?.status === 401) terminate('unauthorized', error)
-        else publish({ checking: false, error: current.controller.signal.aborted ? null : error })
+        // Preserve identity on transient failure, but do not treat the retained
+        // role snapshot as current. Cancellation cannot clear a previous failure.
+        else publish({ checking: false, rolesStale: snapshot.rolesStale || !current.controller.signal.aborted,
+          error: current.controller.signal.aborted ? null : error })
       }
       throw error
     } finally {

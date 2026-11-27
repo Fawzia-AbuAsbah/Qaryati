@@ -1,5 +1,6 @@
 ﻿import { Compass, Map, Search } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import PageState from '../components/PageState.jsx'
 import VillageCard from '../components/VillageCard.jsx'
 import { homeSearchLocation, villageHomeService } from '../services/villageHomeService.js'
@@ -10,11 +11,18 @@ const loadFeatured = signal => villageHomeService.getFeatured({ signal })
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const [searchError, setSearchError] = useState(false)
   const { data, ...state } = useExplorerData(loadFeatured)
 
   function search(event) {
     event.preventDefault()
-    navigate(homeSearchLocation(new FormData(event.currentTarget).get('q')))
+    try {
+      const target = homeSearchLocation(new FormData(event.currentTarget).get('q'), { mode: villageHomeService.mode })
+      setSearchError(false)
+      navigate(target)
+    } catch {
+      setSearchError(true)
+    }
   }
 
   return (
@@ -28,9 +36,11 @@ export default function HomePage() {
             <form className="hero-search" role="search" onSubmit={search}>
               <label className="sr-only" htmlFor="home-search">اسم القرية</label>
               <Search size={21} aria-hidden="true" />
-              <input id="home-search" name="q" type="search" maxLength={villageHomeService.mode === 'api' ? 180 : undefined} placeholder="ابحث عن قرية…" />
+              <input id="home-search" name="q" type="search" dir="auto" maxLength={villageHomeService.mode === 'api' ? 180 : undefined} placeholder="ابحث عن قرية…"
+                aria-invalid={searchError} aria-describedby={searchError ? 'home-search-error' : undefined} onChange={() => setSearchError(false)} />
               <button className="button primary" type="submit">بحث</button>
             </form>
+            {searchError && <p className="notice" id="home-search-error" role="alert">أدخل اسم قرية لا يتجاوز 180 حرفًا.</p>}
             <div className="actions">
               <Link className="button primary" to="/villages"><Compass size={18} aria-hidden="true" /> استكشف القرى</Link>
               <Link className="button outline" to="/map"><Map size={18} aria-hidden="true" /> تصفّح الخريطة</Link>

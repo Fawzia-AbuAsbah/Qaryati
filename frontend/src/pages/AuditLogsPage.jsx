@@ -17,7 +17,7 @@ export default function AuditLogsPage() {
     <section className="shell section audit-page" aria-label="سجل التدقيق">
       {!permissions?.read ? <div className="detail-panel" role="status"><h2>سجل التدقيق غير متاح حاليًا</h2>
         <p>{auditErrorMessage({ code: permissions?.reason ?? 'AUTH_REQUIRED' })}</p>
-        <p>يتطلب سجل التدقيق صلاحيات مدير. لا تتيح الخدمة حاليًا التحقق من صلاحيات الحساب، لذلك لم تُرسل أي طلبات لسجل التدقيق.</p>
+        <p>يتطلب سجل التدقيق صلاحيات مدير متحققًا منها. لا تُرسل طلبات دون الصلاحية المطلوبة.</p>
       </div> : <AuditWorkspace service={service} />}
     </section>
   </>

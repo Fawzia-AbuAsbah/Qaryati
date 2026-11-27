@@ -4,7 +4,7 @@ import { createApiClient } from './apiClient.js'
 import { createVillageMapService, villageMapService } from './villageMapService.js'
 import { createLatestExplorerRequest } from './explorerRequest.js'
 
-const village = (id, extra = {}) => ({ id, nameAr: `قرية ${id}`, governorateId: 2, latitude: 31, longitude: 35, status: 'DRAFT', ...extra })
+const village = (id, extra = {}) => ({ id, nameAr: `قرية ${id}`, governorateId: 2, localAuthorityId: null, nameEn: null, latitude: 31, longitude: 35, ...extra })
 const json = (dto, status = 200) => new Response(JSON.stringify(dto), { status })
 function page(number, size, total, content) {
   const totalPages = Math.ceil(total / size)
@@ -15,19 +15,19 @@ function page(number, size, total, content) {
 function fixture(t, handler, options = {}) {
   const fetchImpl = t.mock.fn((url, init) => {
     const parsed = new URL(url, 'https://frontend.example.test')
-    if (parsed.pathname === '/api/v1/governorates') return json([{ id: 2, nameAr: 'بيت لحم' }])
+    assert.equal(parsed.pathname, '/api/v1/public/villages')
     return handler(parsed, init)
   })
   const mockList = t.mock.fn(() => { throw new Error('Map API errors must not use mock data') })
-  const service = createVillageMapService({ mode: 'api', publicationVerified: true, request: createApiClient({ fetchImpl }), pageSize: 2, mockList, ...options })
+  const service = createVillageMapService({ mode: 'api', browsingVerified: true, request: createApiClient({ fetchImpl }), pageSize: 2, mockList, ...options })
   return { service, fetchImpl, mockList }
 }
 
 test('Map defaults to mock mode', () => { assert.equal(villageMapService.mode, 'mock') })
 
-for (const publicationVerified of [undefined, false, 'true', 'false']) {
-  test(`closed Map gate ${String(publicationVerified)} makes zero requests and never falls back`, async t => {
-    const { service, fetchImpl, mockList } = fixture(t, () => { throw new Error('No HTTP allowed') }, { publicationVerified })
+for (const browsingVerified of [null, false, 'true', 'false']) {
+  test(`closed Map gate ${String(browsingVerified)} makes zero requests and never falls back`, async t => {
+    const { service, fetchImpl, mockList } = fixture(t, () => { throw new Error('No HTTP allowed') }, { browsingVerified })
     await assert.rejects(service.listVillages(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
     assert.equal(service.available, false)
     assert.equal(fetchImpl.mock.callCount(), 0)
@@ -43,10 +43,10 @@ test('invalid Map mode fails explicitly', async t => {
 
 test('Map retrieves every permitted page in ID order using the existing listing service', async t => {
   const pages = [], controller = new AbortController()
-  const rows = [village(1), village(2, { status: 'VERIFIED' }), village(3, { nameAr: null }), village(4, { latitude: null, longitude: null }), village(5)]
+  const rows = [village(1), village(2), village(3), village(4, { latitude: null, longitude: null }), village(5)]
   const { service, fetchImpl, mockList } = fixture(t, (url, init) => {
     const number = Number(url.searchParams.get('page')); pages.push(number)
-    assert.equal(url.pathname, '/api/v1/villages')
+    assert.equal(url.pathname, '/api/v1/public/villages')
     assert.deepEqual(Object.fromEntries(url.searchParams), { page: String(number), size: '2', sortBy: 'id', sortDir: 'asc' })
     assert.equal(init.signal, controller.signal)
     assert.equal(init.method, 'GET')
@@ -59,11 +59,11 @@ test('Map retrieves every permitted page in ID order using the existing listing 
   assert.deepEqual(result.items.map(row => row.id), ['1', '2', '3', '4', '5'])
   assert.equal(result.total, 5)
   assert.equal(result.complete, true)
-  assert.equal(result.items[0].status, 'DRAFT')
-  assert.equal(result.items[2].name, null)
+  assert.equal(Object.hasOwn(result.items[0], 'status'), false)
+  assert.equal(result.items[2].nameEn, null)
   assert.equal(result.items[3].coordinates, null)
-  assert.equal(result.items[0].governorate, 'بيت لحم')
-  assert.equal(fetchImpl.mock.callCount(), 6)
+  assert.equal(Object.hasOwn(result.items[0], 'governorate'), false)
+  assert.equal(fetchImpl.mock.callCount(), 3)
   assert.equal(mockList.mock.callCount(), 0)
 })
 
@@ -74,14 +74,14 @@ test('a verified empty collection returns an explicitly complete empty dataset',
     return json(page(0, 100, 0, []))
   }, { pageSize: 100 })
   assert.deepEqual(await service.listVillages(), { items: [], total: 0, complete: true })
-  assert.equal(fetchImpl.mock.callCount(), 2)
+  assert.equal(fetchImpl.mock.callCount(), 1)
 })
 
 for (const options of [{ maxPages: 1 }, { maxVillages: 2 }]) {
   test(`known traversal limit ${JSON.stringify(options)} fails rather than truncating`, async t => {
     const { service, fetchImpl } = fixture(t, () => json(page(0, 2, 3, [village(1), village(2)])), options)
     await assert.rejects(service.listVillages(), { code: 'MAP_LIMIT_EXCEEDED' })
-    assert.equal(fetchImpl.mock.callCount(), 2)
+    assert.equal(fetchImpl.mock.callCount(), 1)
   })
 }
 
@@ -168,7 +168,7 @@ test('pre-cancelled traversal makes no requests', async t => {
   assert.equal(fetchImpl.mock.callCount(), 0)
 })
 
-test('cancellation after a page response prevents the next page/catalog request', async t => {
+test('cancellation after a page response prevents the next page request', async t => {
   const controller = new AbortController()
   const { service, fetchImpl } = fixture(t, () => {
     const response = json(page(0, 2, 3, [village(1), village(2)]))
@@ -177,7 +177,7 @@ test('cancellation after a page response prevents the next page/catalog request'
     return response
   })
   await assert.rejects(service.listVillages({ signal: controller.signal }), error => error === controller.signal.reason)
-  assert.equal(fetchImpl.mock.callCount(), 2)
+  assert.equal(fetchImpl.mock.callCount(), 1)
 })
 
 test('in-flight later-page cancellation preserves the reason and exposes no partial data', async t => {
@@ -191,7 +191,7 @@ test('in-flight later-page cancellation preserves the reason and exposes no part
   const pending = service.listVillages({ signal: controller.signal })
   await laterPage; controller.abort(new Error('Left Map'))
   await assert.rejects(pending, error => error === controller.signal.reason)
-  assert.equal(fetchImpl.mock.callCount(), 4)
+  assert.equal(fetchImpl.mock.callCount(), 2)
 })
 
 test('a stale complete traversal cannot replace the newer Map load even when HTTP ignores abort', async t => {
@@ -230,4 +230,45 @@ test('mock Map retains every slug and nullable coordinate without API requests',
   assert.equal(result.items[0].id, 'battir')
   assert.equal(result.items.find(row => row.id === 'beita').coordinates, null)
   assert.equal(request.mock.callCount(), 0)
+})
+
+test('exact traversal limits accept a complete dataset, with no extra page request', async t => {
+  const { service, fetchImpl } = fixture(t, url => {
+    const number = Number(url.searchParams.get('page'))
+    return json(page(number, 2, 4, [village(number * 2 + 1), village(number * 2 + 2)]))
+  }, { maxPages: 2, maxVillages: 4 })
+  assert.equal((await service.listVillages()).total, 4)
+  assert.equal(fetchImpl.mock.callCount(), 2)
+})
+test('default 100-page/10000-record ceiling rejects oversized metadata immediately', async t => {
+  const content = Array.from({ length: 100 }, (_, i) => village(i + 1))
+  const { service, fetchImpl } = fixture(t, () => json(page(0, 100, 10001, content)), { pageSize: 100 })
+  await assert.rejects(service.listVillages(), { code: 'MAP_LIMIT_EXCEEDED' })
+  assert.equal(fetchImpl.mock.callCount(), 1)
+})
+test('a failed intermediate page stops a longer traversal before its last page', async t => {
+  const numbers = []
+  const { service, mockList } = fixture(t, url => {
+    const number = Number(url.searchParams.get('page')); numbers.push(number)
+    return number === 0 ? json(page(0, 2, 5, [village(1), village(2)])) : new Response('', { status: 503 })
+  })
+  await assert.rejects(service.listVillages(), { status: 503 })
+  assert.deepEqual(numbers, [0, 1])
+  assert.equal(mockList.mock.callCount(), 0)
+})
+test('a late failed traversal cannot replace a newer successful load even if transport ignores abort', async t => {
+  let finishOld, started, count = 0
+  const oldStarted = new Promise(resolve => { started = resolve })
+  const { service } = fixture(t, () => {
+    if (++count === 1) return new Promise(resolve => { finishOld = () => resolve(new Response('', { status: 503 })); started() })
+    return json(page(0, 2, 1, [village(77)]))
+  })
+  const runner = createLatestExplorerRequest(), successes = [], errors = []
+  const handlers = { onSuccess: value => successes.push(value), onError: error => errors.push(error) }
+  const old = runner.run(signal => service.listVillages({ signal }), handlers)
+  await oldStarted
+  await runner.run(signal => service.listVillages({ signal }), handlers).done
+  finishOld(); await old.done
+  assert.deepEqual(successes.map(data => data.items[0].id), ['77'])
+  assert.deepEqual(errors, [])
 })
