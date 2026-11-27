@@ -1,6 +1,6 @@
 import { apiClient } from './apiClient.js'
 import { toBackendId } from './villageAdapters.js'
-import { adaptPublicVillage } from './publicVillageAdapters.js'
+import { adaptPublicVillageDetail } from './publicVillageAdapters.js'
 import { createVillageAccess, publicVillageCapabilities, villageDataMode, VillageAccessError } from './villageMode.js'
 import { getVillage as getMockVillage } from './villageService.js'
 
@@ -29,7 +29,7 @@ export function createVillageDetailsService({ mode = 'mock', identityVerified = 
       throw error
     }
     signal?.throwIfAborted()
-    const village = adaptPublicVillage(dto)
+    const village = adaptPublicVillageDetail(dto)
     if (village.backendId !== id) throw new TypeError('Village response ID does not match the route')
     return village
   }

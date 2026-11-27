@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { publicVillageCapabilities } from './villageMode.js'
+import { adaptPublicVillageDetail } from './publicVillageAdapters.js'
 
 // Render the actual JSX with installed Vite/React, without a DOM, HTTP listener,
 // dependency additions or backend. Only the existing village-data hook and
@@ -98,6 +99,48 @@ test('actual public Details renders only verified basic fields with honest unsup
   assert.equal(html.includes('conflict-panel'), false)
   assert.equal(html.includes('DRAFT'), false)
   assert.equal(html.includes('<img'), false)
+})
+
+function publicDetailHtml(patch = {}) {
+  details.available = true
+  const data = adaptPublicVillageDetail({ id: 42, nameAr: 'Synthetic village', nameEn: null,
+    governorateId: 2, localAuthorityId: null, latitude: 0, longitude: 0,
+    nameOrigin: 'Synthetic origin', locationDescription: 'Synthetic location', elevationM: -430.25,
+    areaKm2: 1.125, ...patch })
+  explorer.setResult({ data, loading: false, retry() {} })
+  return render(components.Details, {}, session([], { status: 'anonymous', user: null }))
+}
+
+test('actual public Details renders the four approved fields with units, decimal values and zero coordinates', () => {
+  const html = publicDetailHtml()
+  for (const [label, value] of [['أصل الاسم', 'Synthetic origin'], ['وصف الموقع', 'Synthetic location'],
+    ['الارتفاع (متر)', '-430.25'], ['المساحة (كم²)', '1.125'], ['خط العرض', '0'], ['خط الطول', '0']]) {
+    assert.ok(html.includes(`<strong>${label}: </strong><bdi>${value}</bdi>`))
+  }
+  assert.equal(html.includes('data-protected-village-id='), false)
+  assert.equal(html.includes('data-village-id='), false)
+  assert.equal(html.includes('verification-panel'), false)
+  assert.equal(html.includes('conflict-panel'), false)
+})
+
+test('actual public Details keeps zero elevation and displays unavailable optional values without invented data', () => {
+  const html = publicDetailHtml({ nameOrigin: null, elevationM: 0, areaKm2: null,
+    latitude: null, longitude: null })
+  for (const label of ['أصل الاسم', 'المساحة (كم²)', 'خط العرض', 'خط الطول', 'الاسم الإنجليزي', 'معرّف الهيئة المحلية']) {
+    assert.ok(html.includes(`<strong>${label}: </strong><bdi>غير متاح</bdi>`))
+  }
+  assert.ok(html.includes('<strong>الارتفاع (متر): </strong><bdi>0</bdi>'))
+  const nullElevation = publicDetailHtml({ elevationM: null })
+  assert.ok(nullElevation.includes('<strong>الارتفاع (متر): </strong><bdi>غير متاح</bdi>'))
+})
+
+test('actual public Details escapes descriptive strings as text and creates no HTML from their contents', () => {
+  const html = publicDetailHtml({ nameOrigin: '<img src=x onerror=alert(1)>',
+    locationDescription: '<script>alert(2)</script>' })
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/)
+  assert.match(html, /&lt;script&gt;alert\(2\)&lt;\/script&gt;/)
+  assert.equal(html.includes('<img'), false)
+  assert.equal(html.includes('<script'), false)
 })
 
 for (const auth of [session(['VIEWER']), session(['EDITOR']), session(['ADMIN']), session(['VIEWER', 'ADMIN']),

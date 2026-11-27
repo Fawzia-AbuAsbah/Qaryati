@@ -5,7 +5,8 @@ import { createVillageDetailsService, villageDetailsService } from './villageDet
 import { createLatestExplorerRequest } from './explorerRequest.js'
 import { publicVillageCapabilities } from './villageMode.js'
 
-const village = (id = 42, extra = {}) => ({ id, governorateId: 2, localAuthorityId: null, nameAr: 'بتير', nameEn: null, latitude: null, longitude: null, ...extra })
+const village = (id = 42, extra = {}) => ({ id, governorateId: 2, localAuthorityId: null, nameAr: 'بتير', nameEn: null,
+  latitude: null, longitude: null, nameOrigin: null, locationDescription: 'Public village location', elevationM: null, areaKm2: null, ...extra })
 const json = (dto, status = 200) => new Response(JSON.stringify(dto), { status })
 function fixture(t, handler = () => json(village()), options = {}) {
   const fetchImpl = t.mock.fn((url, init) => {
@@ -60,6 +61,38 @@ test('basic identity uses exactly the public endpoint without query, Bearer toke
   assert.equal(identity.coordinates, null)
   assert.equal(fetchImpl.mock.callCount(), 1)
 })
+for (const elevationM of [-430.5, 0, 700.25]) {
+  test(`eleven-field public detail preserves descriptive fields and elevation ${elevationM}`, async t => {
+    const dto = village(42, { nameOrigin: 'Public name origin', locationDescription: 'Public location description',
+      latitude: 31.9, longitude: 35.2, elevationM, areaKm2: 1.125 })
+    const { service, fetchImpl, mockGet } = fixture(t, () => json(dto))
+    const detail = await service.getVillage('42')
+    assert.equal(detail.id, '42')
+    assert.equal(detail.backendId, 42)
+    for (const field of ['nameOrigin', 'locationDescription', 'elevationM', 'areaKm2']) assert.equal(detail[field], dto[field])
+    assert.deepEqual(detail.coordinates, [31.9, 35.2])
+    assert.equal(fetchImpl.mock.callCount(), 1)
+    assert.equal(mockGet.mock.callCount(), 0)
+  })
+}
+
+test('seven-field collection responses cannot stand in for the eleven-field detail contract', async t => {
+  const collectionDto = village()
+  for (const field of ['nameOrigin', 'locationDescription', 'elevationM', 'areaKm2']) delete collectionDto[field]
+  const { service, fetchImpl, mockGet } = fixture(t, () => json(collectionDto))
+  await assert.rejects(service.getVillage('42'), TypeError)
+  assert.equal(fetchImpl.mock.callCount(), 1)
+  assert.equal(mockGet.mock.callCount(), 0)
+})
+
+for (const field of ['status', 'createdAt', 'archivedAt', 'sources', 'sourceIds', 'notes', 'auditLogs']) {
+  test(`editorial field ${field} cannot expand the public detail contract`, async t => {
+    const { service, fetchImpl, mockGet } = fixture(t, () => json(village(42, { [field]: null })))
+    await assert.rejects(service.getVillage('42'), TypeError)
+    assert.equal(fetchImpl.mock.callCount(), 1)
+    assert.equal(mockGet.mock.callCount(), 0)
+  })
+}
 for (const id of ['', '0', '-1', '01', '1.5', '1e2', 'battir', '42/other', ' 42', '9007199254740992', null, 42]) {
   test(`invalid API route ID ${String(id)} is rejected before HTTP`, async t => {
     const { service, fetchImpl } = fixture(t)
@@ -98,6 +131,10 @@ test('nullable fields and partial coordinates stay missing without invented name
   assert.equal(identity.coordinates, null)
   assert.equal(identity.latitude, null)
   assert.equal(identity.longitude, 35)
+  assert.equal(identity.nameOrigin, null)
+  assert.equal(identity.locationDescription, 'Public village location')
+  assert.equal(identity.elevationM, null)
+  assert.equal(identity.areaKm2, null)
   for (const field of ['governorate', 'localAuthority', 'description', 'status', 'population', 'history', 'images']) assert.equal(Object.hasOwn(identity, field), false)
 })
 test('basic identity availability never authorizes catalogue reads', async t => {

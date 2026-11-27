@@ -44,6 +44,10 @@ function ApiVillageContent({ village, returnTo, returnLabel }) {
       <section className="detail-panel">
         <h2>معلومات القرية الأساسية</h2>
         <Field label="الاسم الإنجليزي" value={village.nameEn} />
+        <Field label="أصل الاسم" value={village.nameOrigin} />
+        <Field label="وصف الموقع" value={village.locationDescription} />
+        <Field label="الارتفاع (متر)" value={village.elevationM} />
+        <Field label="المساحة (كم²)" value={village.areaKm2} />
         <Field label="معرّف المحافظة" value={village.governorateId} />
         <Field label="معرّف الهيئة المحلية" value={village.localAuthorityId} />
         <p>أسماء المحافظات والهيئات المحلية غير متاحة من الخدمة العامة حاليًا.</p>

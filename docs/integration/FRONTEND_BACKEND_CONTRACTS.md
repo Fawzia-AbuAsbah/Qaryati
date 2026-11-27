@@ -2,6 +2,7 @@
 
 Original source snapshot: `Fawzia/functional-integration`, `29c1f0f`, 2026-11-27.
 F6 public Village detail update: `Fawzia/final-integration`, based on `0f68b7e`.
+F6B frontend detail adapter/view update: based on backend commit `3cb7214`.
 Roaa's frontend is now merged in this checkout; its public Village adapter/detail
 path was inspected for F6. Runtime configuration and browser integration remain
 unverified. This document describes **existing backend source contracts**, not a
@@ -174,16 +175,19 @@ GET /api/v1/public/villages/101
 }
 ```
 
-**Coordinated frontend update required:** the merged
-[public adapter](../../frontend/src/services/publicVillageAdapters.js#L3) still
-accepts exactly seven keys, and
-[the detail service](../../frontend/src/services/villageDetailsService.js#L26)
-uses that adapter. It will reject this eleven-field detail response until a
-separate detail adapter is implemented. Preserve the seven-field list/map adapter;
-do not substitute the broader editorial adapter. The current
-[API detail view](../../frontend/src/components/ApiVillageDetails.jsx)
-also needs explicit rendering of these four fields. F6 makes no frontend edits
-and claims no browser or live integration validation.
+**Frontend contract separation (F6B):** the
+[public adapters](../../frontend/src/services/publicVillageAdapters.js) keep
+`adaptPublicVillage` strict at seven keys for collection/map consumers and add
+`adaptPublicVillageDetail` strict at eleven keys. Only
+[the detail service](../../frontend/src/services/villageDetailsService.js)
+uses the detail adapter; neither accepts expanded editorial responses. The
+[API detail view](../../frontend/src/components/ApiVillageDetails.jsx) renders
+the four descriptive fields as escaped text, with elevation in metres and area
+in square kilometres. Optional nulls remain unavailable; zero elevation and
+coordinates are retained. Mock mode remains the default, and API failures do
+not fall back to mock data. Focused adapter/service, contract-separation and
+actual-component render tests were added/updated but were not executed for F6B.
+Browser/backend integration remains unverified.
 
 ### Public geographic catalogues (F5)
 
@@ -704,7 +708,7 @@ Synthetic public missing/hidden response shape:
 | No CORS configuration found in backend controllers/configuration | Agree same-origin delivery or a frontend development proxy forwarding `/api/v1` to an independently verified backend. A separate-origin frontend requires explicit backend/edge CORS design and validation, including Authorization preflight; anonymous GET permission alone is not CORS. No ports/targets are approved here. |
 | Public Village reads and geographic catalogues are available | The F5 Governorate/Local Authority catalogue projections are anonymous; their original management endpoints remain protected. Names, relations, Population, Heritage, Agriculture, Community, sources, workflow/audit and geocoding remain protected. Public detail sections still require explicit policies and separate implementations. |
 | Public collection has seven fields; public detail has eleven approved fields (F6) | The four detail descriptions do not release histories, population, provenance or other child sections. Do not copy editorial responses into public caches/pages. |
-| Merged frontend detail still uses the strict seven-field public adapter | Coordinate a dedicated eleven-field detail adapter and UI rendering before integrating F6; the current API-mode detail client rejects the expanded response. Collection/map clients retain seven fields. Browser behavior remains unverified. |
+| Frontend detail has a dedicated eleven-field adapter and renders the four F6 fields (F6B) | Collection/map parsing remains strict at seven fields. Focused offline tests are supplied but were not executed for F6B; browser/backend integration remains unverified. |
 | Population village filtering is implemented (F4) | Authenticated demographic panels can send optional positive villageId with page/size. Keep the filter on every page request; totals are server-filtered under the existing role visibility rules. Browser/database integration remains unverified. |
 | Publication workflow is incomplete | Village creation is DRAFT; verification records do not update Village.status. No application HTTP publication transition was found for Village or Population/Heritage. Define ownership/transitions before promising "approve and publish" UI behavior. Do not work around this by changing a database manually. |
 | Conflict resolution stores metadata/status only | Applying a selected value to the canonical Village is a separate missing workflow; do not show it as already applied. |
@@ -716,7 +720,7 @@ Synthetic public missing/hidden response shape:
 ## 12. FRONTEND INTEGRATION CHECKLIST
 
 - [ ] Public Village pages/search/map use `/api/v1/public/villages` and its detail route.
-- [ ] Keep seven-field collection/map parsing separate from eleven-field public detail parsing; update the merged detail adapter/view for F6 before integration, preserving nulls and backend visibility rules.
+- [ ] Manually verify the F6B seven-field collection/map versus eleven-field detail adapters and detail rendering, preserving nulls, zero values and backend visibility rules; browser/backend integration remains outstanding.
 - [ ] Public geographic labels/filters use `/api/v1/public/governorates` and `/api/v1/public/local-authorities`, retaining governorateId when narrowing Local Authorities.
 - [ ] Authenticated editorial/admin pages use protected endpoints and their actual per-module role matrix.
 - [ ] Send JWT only where needed; omit stale/invalid Authorization headers on anonymous reads.
