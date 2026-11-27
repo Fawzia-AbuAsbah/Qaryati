@@ -1,9 +1,9 @@
 # Qaryati frontend
 
 The React/Vite app defaults to the existing mock data through
-`src/services/villageService.js`. Explorer and Details have gated API services;
-Home and Map continue to use the unchanged mock service. Details retains its
-original mock renderer when mock mode is selected.
+`src/services/villageService.js`. Home, Map, Explorer and Details share a gated
+API mode. Mock Map and Details retain their existing renderers; mock Home keeps
+its original featured villages, hero and navigation.
 Starting the frontend does not start the backend or connect to PostgreSQL.
 
 ## Commands
@@ -203,11 +203,11 @@ was not verified in a browser.
 
 ## Village Explorer API integration (gated)
 
-`VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Explorer/Details default. `api` selects the API path;
+`VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Home/Map/Explorer/Details default. `api` selects the API path;
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
-Explorer and Details; Home, Map, authentication and data-quality pages are not
-integrated with the API.
+Home, Map, Explorer and Details. Authentication and data-quality pages are not
+integrated.
 
 The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
@@ -330,9 +330,10 @@ selected village, missing-name, not-found and failure states.
 API Explorer cards link to numeric Details routes only when both services are
 available in the same mode. Their return link retains the Explorer pathname and
 query parameters through router state; other return destinations are rejected.
-API Details displays coordinate availability without links into the unintegrated
-mock Map. Mock Details keeps its original page structure, demo text, titles,
-section values and Map links. Home and Map are unchanged and remain mock-only.
+API Details links valid coordinates to the API Map only when both integrations
+are available in the same mode. Mock Details keeps its original page structure,
+demo text, titles, section values and Map links. Home and Map use the same mode;
+their mock behavior is preserved.
 
 Population, agriculture and community are explicitly unavailable in API Details:
 
@@ -351,3 +352,79 @@ helpers. Interactive browser verification was attempted for Details but the nati
 computer-use pipe was unavailable. Interactive UI behavior remains unverified.
 HTTP application-shell checks are not browser verification. No backend was started,
 no live backend requests were made and live backend verification remains unavailable.
+
+## Map and Home API integration (gated)
+
+The existing mode variable now applies to all four main pages. Its name is kept
+for configuration compatibility. The shared publication gate remains **false**;
+selecting `api` does not approve or enable public data access. Map's closed gate
+prevents every catalog/list request and makes no mock fallback. No authentication,
+publication-policy change or new backend endpoint is introduced.
+
+`villageMapService.js` traverses the verified village listing through the existing
+Explorer service and adapters. Each call requests one-based page N as backend
+page N-1, with `sortBy=id`, `sortDir=asc`, and default size 100. The reused service
+also loads the governorate catalog for each page; no separate transport logic or
+hidden endpoint is added. Traversal is sequential and bounded to 100 pages and
+10,000 records. Smaller factory limits are supported for tests; values above
+these ceilings are rejected before HTTP.
+
+The first page establishes total records/pages. Subsequent responses must keep
+those totals, return the requested page/size and contain unique IDs in strictly
+ascending order. A changed total, duplicate ID, skipped/corrected page, malformed
+response, failed request or limit overrun rejects the entire load. Already-read
+rows are never returned as a partial map, silently deduplicated, or represented
+as complete. Retry starts from page zero with a fresh collection. An empty first
+page with zero totals is a successful complete empty traversal.
+
+`complete: true` means every advertised page was retrieved and the observable
+counts/IDs/order checks passed. The backend uses offset pagination and has no
+snapshot/version token; these checks cannot establish a point-in-time snapshot
+or detect all same-count changes during concurrent edits. A stronger consistency
+guarantee requires a backend contract. This limitation remains separate from the
+closed publication gate.
+
+The API Map renders only after successful full traversal. Coordinate validation
+comes from the existing village adapter. Malformed supplied coordinates fail
+the load; nullable/incomplete pairs remain null and stay in the village index
+without markers. Actual numeric zero is valid, and missing axes never become
+zero. Marker eligibility is geography-only, not client-side publication filtering.
+Numeric `village` selections are resolved against the loaded permitted listing;
+invalid, absent and missing-coordinate selections have explicit states. No direct
+identity lookup is used to add a village omitted from the listing.
+
+Map, Explorer and Details links require matching available integrations. API
+popups/index links use numeric Details routes; router state preserves a Map return
+URL including selected-village and unrelated query parameters. Only internal Map
+or Explorer return paths are accepted. Mock slug navigation remains separate.
+Selection changes reuse the complete dataset; reload/unmount cancels the entire
+traversal and the existing stale-response controller ignores late success/errors.
+
+Leaflet, its marker assets and Arabic controls, OpenStreetMap tiles and attribution,
+RTL popups/layout and the original mock Map rendering are retained. Tile failures
+keep the existing warning and village index available. Empty collections, no valid
+locations, missing names, HTTP/auth failures and network/traversal failures have
+explicit Arabic states. No partial dataset is shown after a failed load.
+
+`villageHomeService.js` reuses the existing Explorer service for mock featured
+villages, preserving the three demo selections and their order. Home search uses
+the Explorer URL helper and the `q` parameter, preserving literal Arabic and
+reserved characters without adding status filters. The hero, Arabic text,
+illustrative artwork, routes and mock cards are preserved.
+
+No featured endpoint or approved selection policy was found in the fetched
+backend contracts. In API mode, `getFeatured` returns an explicit unavailable
+state and makes no requests, even in isolated tests with publication confirmation
+injected. It never sends an unsupported featured parameter, takes arbitrary rows
+from the listing or substitutes demo records. This availability-only result does
+not bypass the gate or expose API data. A future featured policy needs separate
+backend/team approval before implementing a selection.
+
+Dependency-free tests cover all-page retrieval, incomplete/empty datasets, limits,
+duplicates, coordinate validity, cancellation/stale loads, selections, navigation,
+Home search, featured unavailability, mock regression and zero-request closed gates.
+Interactive verification of Home/Map was attempted, but the native computer-use
+pipe could not connect. Browser layout, marker/popup/zoom interaction and tile-error
+rendering remain unverified interactively. HTTP application-shell checks are not
+browser verification. The backend/PostgreSQL were not started, no live API requests
+were made and live backend verification remains unavailable.

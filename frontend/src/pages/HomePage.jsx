@@ -2,19 +2,19 @@
 import { Link, useNavigate } from 'react-router-dom'
 import PageState from '../components/PageState.jsx'
 import VillageCard from '../components/VillageCard.jsx'
-import { listVillages } from '../services/villageService.js'
-import { useVillageData } from '../services/useVillageData.js'
+import { homeSearchLocation, villageHomeService } from '../services/villageHomeService.js'
+import { useExplorerData } from '../services/useExplorerData.js'
+import { detailsErrorMessage } from '../services/villageDetailsState.js'
 
-const loadFeatured = () => listVillages({ featured: true, pageSize: 3 })
+const loadFeatured = signal => villageHomeService.getFeatured({ signal })
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { data, ...state } = useVillageData(loadFeatured)
+  const { data, ...state } = useExplorerData(loadFeatured)
 
   function search(event) {
     event.preventDefault()
-    const query = new FormData(event.currentTarget).get('q').trim()
-    navigate({ pathname: '/villages', search: query ? new URLSearchParams({ q: query }).toString() : '' })
+    navigate(homeSearchLocation(new FormData(event.currentTarget).get('q')))
   }
 
   return (
@@ -28,7 +28,7 @@ export default function HomePage() {
             <form className="hero-search" role="search" onSubmit={search}>
               <label className="sr-only" htmlFor="home-search">اسم القرية</label>
               <Search size={21} aria-hidden="true" />
-              <input id="home-search" name="q" type="search" placeholder="ابحث عن قرية…" />
+              <input id="home-search" name="q" type="search" maxLength={villageHomeService.mode === 'api' ? 180 : undefined} placeholder="ابحث عن قرية…" />
               <button className="button primary" type="submit">بحث</button>
             </form>
             <div className="actions">
@@ -44,9 +44,9 @@ export default function HomePage() {
           <div><h2 id="featured-title">قرى مختارة</h2><p>ابدأ رحلتك من إحدى هذه القرى.</p></div>
           <Link className="button outline" to="/villages">عرض جميع القرى</Link>
         </div>
-        {data?.items.length ? (
+        {data?.status === 'unavailable' ? <p className="notice" role="status">القرى المختارة غير متاحة من الخدمة حاليًا.</p> : data?.items.length ? (
           <div className="village-grid">{data.items.map((village) => <VillageCard key={village.id} village={village} />)}</div>
-        ) : <PageState {...state} title="لا توجد قرى مختارة حاليًا" />}
+        ) : <PageState {...state} title="لا توجد قرى مختارة حاليًا" message={state.error ? detailsErrorMessage(state.error) : undefined} />}
       </section>
     </>
   )

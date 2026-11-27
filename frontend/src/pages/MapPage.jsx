@@ -1,7 +1,7 @@
-﻿import { useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon, control } from 'leaflet'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import markerUrl from 'leaflet/dist/images/marker-icon.png'
 import markerRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png'
 import markerShadowUrl from 'leaflet/dist/images/marker-shadow.png'
@@ -9,6 +9,13 @@ import 'leaflet/dist/leaflet.css'
 import PageState from '../components/PageState.jsx'
 import { hasCoordinates, listMapVillages } from '../services/villageService.js'
 import { useVillageData } from '../services/useVillageData.js'
+import { useExplorerData } from '../services/useExplorerData.js'
+import { villageMapService } from '../services/villageMapService.js'
+import { mapPresentation, mapSelectionMessage, mapErrorMessage } from '../services/villageMapState.js'
+import { villageDetailsService } from '../services/villageDetailsService.js'
+import { villageDetailsHref } from '../services/villageDetailsState.js'
+
+const number = new Intl.NumberFormat('ar')
 
 const villageIcon = new Icon({
   iconUrl: markerUrl,
@@ -41,26 +48,28 @@ function MapControls({ villages, selected }) {
   return null
 }
 
-function VillageMarker({ village, selected }) {
+function VillageMarker({ village, selected, apiMode = false, returnTo }) {
   const marker = useRef(null)
+  const name = apiMode ? village.name ?? 'اسم القرية غير متاح' : village.name
+  const detailsHref = apiMode ? villageDetailsHref(village.id, villageMapService, villageDetailsService) : `/villages/${village.id}`
 
   useEffect(() => {
     if (selected) marker.current?.openPopup()
   }, [selected])
 
   return (
-    <Marker ref={marker} position={village.coordinates} icon={villageIcon} title={village.name} alt={village.name} eventHandlers={markerEvents}>
+    <Marker ref={marker} position={village.coordinates} icon={villageIcon} title={name} alt={name} eventHandlers={markerEvents}>
       <Popup>
         <div dir="rtl">
-          <strong>{village.name}</strong><br />
-          <Link to={`/villages/${village.id}`}>تفاصيل القرية</Link>
+          <strong>{name}</strong><br />
+          {detailsHref ? <Link to={detailsHref} state={apiMode ? { mapReturnTo: returnTo } : undefined}>تفاصيل القرية</Link> : <p>تفاصيل القرية غير متاحة حاليًا.</p>}
         </div>
       </Popup>
     </Marker>
   )
 }
 
-function VillageMap({ villages, selected }) {
+function VillageMap({ villages, selected, apiMode = false, returnTo }) {
   const [tileError, setTileError] = useState(false)
   return (
     <>
@@ -69,7 +78,7 @@ function VillageMap({ villages, selected }) {
         <MapContainer center={villages[0].coordinates} zoom={9} scrollWheelZoom={false} zoomControl={false} attributionControl={false}>
           <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} eventHandlers={{ tileerror: () => setTileError(true) }} />
           <MapControls villages={villages} selected={selected} />
-          {villages.map((village) => <VillageMarker key={village.id} village={village} selected={selected?.id === village.id} />)}
+          {villages.map((village) => <VillageMarker key={village.id} village={village} selected={selected?.id === village.id} apiMode={apiMode} returnTo={returnTo} />)}
         </MapContainer>
         <div className="map-attribution" dir="rtl">© مساهمو <a href="https://www.openstreetmap.org/copyright">أوبن ستريت ماب</a></div>
       </div>
@@ -77,7 +86,7 @@ function VillageMap({ villages, selected }) {
   )
 }
 
-export default function MapPage() {
+function MockMapPage() {
   const [params] = useSearchParams()
   const { data, ...state } = useVillageData(listMapVillages)
   const id = params.get('village')
@@ -102,4 +111,39 @@ export default function MapPage() {
       </section>
     </>
   )
+}
+
+function ApiMapPage() {
+  const [params] = useSearchParams()
+  const { pathname, search } = useLocation()
+  const load = useCallback(signal => villageMapService.listVillages({ signal }), [])
+  const { data, ...state } = useExplorerData(load)
+  const { markers, selected, selection } = mapPresentation(data, params.get('village'))
+  const selectionMessage = mapSelectionMessage(selection)
+  const returnTo = `${pathname}${search}`
+  return <>
+    <div className="page-banner"><div className="shell"><h1>خريطة القرى</h1><p>اختر علامة على الخريطة لعرض اسم القرية والانتقال إلى تفاصيلها.</p></div></div>
+    <section className="shell section" aria-label="مواقع القرى">
+      {selectionMessage && <p className="notice" role="status">{selectionMessage}</p>}
+      {markers.length ? <VillageMap villages={markers} selected={selected} apiMode returnTo={returnTo} />
+        : <PageState {...state} title={data?.items.length ? 'لا توجد مواقع متاحة للعرض' : 'لا توجد قرى متاحة للعرض'} message={state.error ? mapErrorMessage(state.error) : undefined} />}
+      {data?.items.length > 0 && <div className="map-index">
+        <h2>روابط القرى</h2>
+        <p>عدد القرى: {number.format(data.total)} · المواقع المتاحة: {number.format(markers.length)}</p>
+        <ul>{data.items.map(village => {
+          const href = villageDetailsHref(village.id, villageMapService, villageDetailsService)
+          const name = village.name ?? 'اسم القرية غير متاح'
+          return <li key={village.id}>
+            {href ? <Link to={href} state={{ mapReturnTo: returnTo }}>{name}</Link> : <span>{name}</span>}
+            {!hasCoordinates(village) && <span> · الموقع غير متاح</span>}
+          </li>
+        })}</ul>
+        <p>القرى التي لا تتوفر إحداثياتها مدرجة دون علامات على الخريطة.</p>
+      </div>}
+    </section>
+  </>
+}
+
+export default function MapPage() {
+  return villageMapService.mode === 'mock' ? <MockMapPage /> : <ApiMapPage />
 }

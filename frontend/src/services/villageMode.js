@@ -1,5 +1,5 @@
 // Shared release gate. Environment configuration cannot approve publication rules.
-// Covers Explorer, village identity, governorates and the four heritage collections.
+// Covers Home, Map, Explorer, village identity, governorates and heritage reads.
 export const publicVillageContractsVerified = false
 export const villageDataMode = import.meta.env?.VITE_VILLAGE_EXPLORER_MODE?.trim() || 'mock'
 

@@ -12,6 +12,12 @@ export function explorerReturnHref(value) {
   return typeof value === 'string' && (value === '/villages' || value.startsWith('/villages?')) ? value : '/villages'
 }
 
+export function detailsReturnNavigation(state) {
+  const map = state?.mapReturnTo
+  if (typeof map === 'string' && (map === '/map' || map.startsWith('/map?'))) return { href: map, label: 'خريطة القرى' }
+  return { href: explorerReturnHref(state?.explorerReturnTo), label: 'دليل القرى' }
+}
+
 export function detailsErrorMessage(error) {
   if (error?.code === 'PUBLIC_CONTRACTS_UNCONFIRMED') return 'بيانات القرية من الخدمة غير متاحة حاليًا.'
   if (error?.code === 'INVALID_MODE') return 'إعداد مصدر بيانات القرية غير صالح.'

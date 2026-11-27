@@ -3,8 +3,10 @@ import { BookOpen, Building2, Landmark, MapPin, Trees, Users } from 'lucide-reac
 import { Link, useLocation, useParams } from 'react-router-dom'
 import PageState from './PageState.jsx'
 import { villageDetailsService } from '../services/villageDetailsService.js'
-import { detailsErrorMessage, detailsPageTitle, explorerReturnHref } from '../services/villageDetailsState.js'
+import { detailsErrorMessage, detailsPageTitle, detailsReturnNavigation } from '../services/villageDetailsState.js'
 import { useExplorerData } from '../services/useExplorerData.js'
+import { villageMapService } from '../services/villageMapService.js'
+import { villageMapHref } from '../services/villageMapState.js'
 
 const statusLabels = { DRAFT: 'مسودة', UNDER_REVIEW: 'قيد المراجعة', VERIFIED: 'موثّق', REJECTED: 'مرفوض', DISPUTED: 'محل خلاف' }
 const precisionLabels = { EXACT: 'تاريخ محدد', YEAR: 'سنة', PERIOD: 'فترة', UNKNOWN: 'غير معروف' }
@@ -63,14 +65,15 @@ function RecordSection({ villageId, section, title }) {
   )
 }
 
-function ApiVillageContent({ village, returnTo }) {
+function ApiVillageContent({ village, returnTo, returnLabel }) {
   const load = useCallback(signal => villageDetailsService.getGovernorates({ signal }), [])
   const { data: catalog, ...catalogState } = useExplorerData(load)
   const governorate = catalog?.namesById.get(village.governorateId)
   const name = village.name ?? 'اسم القرية غير متاح'
+  const mapHref = villageMapHref(village, villageDetailsService, villageMapService)
   return <>
     <div className="page-banner"><div className="shell">
-      <nav aria-label="مسار الصفحة"><Link to={returnTo}>دليل القرى</Link> / <span aria-current="page">{name}</span></nav>
+      <nav aria-label="مسار الصفحة"><Link to={returnTo}>{returnLabel}</Link> / <span aria-current="page">{name}</span></nav>
       <h1>{name}</h1>
       <p className="location"><MapPin size={18} aria-hidden="true" />{catalogState.loading ? 'جارٍ تحميل المحافظة…' : governorate ? `محافظة ${governorate}` : 'المحافظة غير متاحة'}</p>
     </div></div>
@@ -82,7 +85,8 @@ function ApiVillageContent({ village, returnTo }) {
         <Field label="وصف الموقع" value={village.locationDescription} />
         <Field label="خط العرض" value={village.latitude} /><Field label="خط الطول" value={village.longitude} />
         <Field label="الارتفاع بالمتر" value={village.elevationM} /><Field label="المساحة بالكيلومتر المربع" value={village.areaKm2} />
-        <p>{village.coordinates ? 'إحداثيات القرية متاحة. عرض الخريطة غير متاح حاليًا.' : 'موقع القرية على الخريطة غير متاح حاليًا.'}</p>
+        {mapHref ? <Link className="button primary" to={mapHref}><MapPin size={18} aria-hidden="true" />عرض الموقع على الخريطة</Link>
+          : <p>{village.coordinates ? 'إحداثيات القرية متاحة. عرض الخريطة غير متاح حاليًا.' : 'موقع القرية على الخريطة غير متاح حاليًا.'}</p>}
         {catalogState.error && <PageState error={catalogState.error} retry={catalogState.retry} message={`تعذّر تحميل أسماء المحافظات. ${detailsErrorMessage(catalogState.error)}`} />}
       </section>
       <section className="detail-panel"><h2><Users size={22} aria-hidden="true" />السكان</h2><p>بيانات السكان لهذه القرية غير متاحة من الخدمة حاليًا.</p></section>
@@ -103,16 +107,16 @@ function ApiVillageContent({ village, returnTo }) {
 export default function ApiVillageDetails() {
   const { id } = useParams()
   const location = useLocation()
-  const returnTo = explorerReturnHref(location.state?.explorerReturnTo)
+  const { href: returnTo, label: returnLabel } = detailsReturnNavigation(location.state)
   const load = useCallback(signal => villageDetailsService.getVillage(id, { signal }), [id])
   const { data: village, ...state } = useExplorerData(load)
   const title = detailsPageTitle({ ...state, village })
   useLayoutEffect(() => { document.title = title }, [title])
   if (!village) return <div className="shell section">
     <PageState {...state} title="لم نعثر على هذه القرية" message={state.error ? detailsErrorMessage(state.error) : undefined}>
-      <Link className="button primary" to={returnTo}>العودة إلى دليل القرى</Link>
+      <Link className="button primary" to={returnTo}>العودة إلى {returnLabel}</Link>
     </PageState>
   </div>
   // A village change remounts section pagination and cancels all previous reads.
-  return <ApiVillageContent key={village.id} village={village} returnTo={returnTo} />
+  return <ApiVillageContent key={village.id} village={village} returnTo={returnTo} returnLabel={returnLabel} />
 }

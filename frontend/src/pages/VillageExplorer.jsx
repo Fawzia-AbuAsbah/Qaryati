@@ -8,19 +8,25 @@ import { clearExplorerQuery, readExplorerQuery, updateExplorerQuery } from '../s
 import { useExplorerData } from '../services/useExplorerData.js'
 import { villageDetailsService } from '../services/villageDetailsService.js'
 import { villageDetailsHref } from '../services/villageDetailsState.js'
+import { villageMapService } from '../services/villageMapService.js'
+import { villageMapHref } from '../services/villageMapState.js'
 
 const number = new Intl.NumberFormat('ar')
 const sortLabels = { id: 'المعرّف', nameAr: 'الاسم العربي', nameEn: 'الاسم الإنجليزي', createdAt: 'تاريخ الإضافة', updatedAt: 'آخر تحديث' }
 
 function ApiVillageCard({ village, returnTo }) {
   const detailsHref = villageDetailsHref(village.id, villageExplorerService, villageDetailsService)
+  const mapHref = villageMapHref(village, villageExplorerService, villageMapService)
   return (
     <article className="village-card">
       <div className="card-scene missing-scene"><MapPin aria-hidden="true" /><p>صورة القرية غير متاحة</p></div>
       <div className="card-body">
         <p className="location"><MapPin size={16} aria-hidden="true" />{village.governorate ? `محافظة ${village.governorate}` : 'المحافظة غير متاحة'}</p>
         <h3>{village.name ?? 'اسم القرية غير متاح'}</h3>
-        {detailsHref ? <Link className="card-link" to={detailsHref} state={{ explorerReturnTo: returnTo }}>تفاصيل القرية</Link> : <p>تفاصيل القرية غير متاحة حاليًا.</p>}
+        <div className="actions">
+          {detailsHref ? <Link className="card-link" to={detailsHref} state={{ explorerReturnTo: returnTo }}>تفاصيل القرية</Link> : <p>تفاصيل القرية غير متاحة حاليًا.</p>}
+          {mapHref && <Link className="card-link" to={mapHref}>عرض الموقع على الخريطة</Link>}
+        </div>
       </div>
     </article>
   )
