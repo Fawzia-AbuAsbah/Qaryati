@@ -1,10 +1,12 @@
 export function readExplorerQuery(params) {
   const requested = Number(params.get('page'))
+  const sortBy = params.get('sortBy') ?? 'id'
   return {
     query: params.get('q') ?? '', governorate: params.get('governorate') ?? '',
     governorateId: params.get('governorateId') ?? '',
+    localAuthorityId: params.get('localAuthorityId') ?? '',
     page: Number.isSafeInteger(requested) && requested > 0 ? requested : 1,
-    sortBy: params.get('sortBy') ?? 'id', sortDir: params.get('sortDir')?.toLowerCase() ?? 'asc',
+    sortBy: ['createdAt', 'updatedAt'].includes(sortBy) ? 'id' : sortBy, sortDir: params.get('sortDir')?.toLowerCase() ?? 'asc',
   }
 }
 
@@ -20,6 +22,6 @@ export function updateExplorerQuery(params, name, value) {
 
 export function clearExplorerQuery(params) {
   const next = new URLSearchParams(params)
-  for (const name of ['q', 'governorate', 'governorateId', 'page', 'sortBy', 'sortDir']) next.delete(name)
+  for (const name of ['q', 'governorate', 'governorateId', 'localAuthorityId', 'page', 'sortBy', 'sortDir']) next.delete(name)
   return next
 }

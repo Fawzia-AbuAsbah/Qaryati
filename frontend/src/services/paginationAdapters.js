@@ -1,4 +1,5 @@
 import { adaptVillage } from './villageAdapters.js'
+import { adaptPublicVillage } from './publicVillageAdapters.js'
 
 function integer(value, field, minimum = 0) {
   if (!Number.isSafeInteger(value) || value < minimum) {
@@ -40,12 +41,20 @@ function envelope(dto, pageField) {
   }
 }
 
-export function adaptVillagePage(dto, governorateNames) {
+function villagePage(dto, adapt) {
   const result = envelope(dto, 'number')
   for (const field of ['numberOfElements', 'first', 'last', 'hasNext', 'hasPrevious', 'empty']) {
     if (dto[field] !== result[field]) throw new TypeError(`Inconsistent VillagePageResponse.${field}`)
   }
-  return { ...result, items: dto.content.map(item => adaptVillage(item, governorateNames)) }
+  return { ...result, items: dto.content.map(adapt) }
+}
+
+export function adaptVillagePage(dto, governorateNames) {
+  return villagePage(dto, item => adaptVillage(item, governorateNames))
+}
+
+export function adaptPublicVillagePage(dto) {
+  return villagePage(dto, adaptPublicVillage)
 }
 
 // Only the shared envelope is adapted; population/heritage domain DTOs stay untouched.

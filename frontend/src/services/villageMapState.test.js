@@ -48,13 +48,13 @@ test('partial or mismatched datasets cannot be presented as complete', () => {
 })
 
 test('Explorer/Details to Map links require matching available integrations and valid coordinates', () => {
-  const explorer = createVillageExplorerService({ mode: 'api', publicationVerified: true })
-  const details = createVillageDetailsService({ mode: 'api', publicationVerified: true })
-  const map = createVillageMapService({ mode: 'api', publicationVerified: true })
+  const explorer = createVillageExplorerService({ mode: 'api', browsingVerified: true })
+  const details = createVillageDetailsService({ mode: 'api', identityVerified: true })
+  const map = createVillageMapService({ mode: 'api', browsingVerified: true })
   assert.equal(villageMapHref(rows[0], explorer, map), '/map?village=42')
   assert.equal(villageMapHref(rows[0], details, map), '/map?village=42')
   assert.equal(villageMapHref(rows[1], details, map), null)
-  assert.equal(villageMapHref(rows[0], details, createVillageMapService({ mode: 'api' })), null)
+  assert.equal(villageMapHref(rows[0], details, createVillageMapService({ mode: 'api', browsingVerified: false })), null)
   assert.equal(villageMapHref(rows[0], details, villageMapService), null)
   assert.equal(villageMapHref({ ...rows[0], id: 'battir' }, details, map), null)
   assert.equal(villageMapHref(rows[0], { ...ready, available: false }, map), null)

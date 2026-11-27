@@ -11,7 +11,7 @@ import { adaptSource } from './sourceContracts.js'
 import { createVerificationService } from './verificationService.js'
 import { createConflictService } from './conflictService.js'
 import { createAuditService } from './auditService.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 
 // All HTTP here is simulated. No services, users or database are contacted.
 const sourceBody = { title: 'Synthetic source', publisher: null, author: null, sourceType: 'BOOK', url: null,
@@ -233,10 +233,10 @@ for (const mode of ['anonymous', 'logout', 'expired', 'replacement']) {
   })
 }
 
-test('only effective-role capability is enabled; public Village capability and mock mode are preserved', () => {
+test('effective roles and basic public capabilities are independent; catalogues/rich sections remain disabled and mock stays default', () => {
   assert.equal(effectiveRolesContractVerified, true)
   assert.equal(effectiveSourceRolesVerified, true)
-  assert.equal(publicVillageContractsVerified, false)
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
 })
 

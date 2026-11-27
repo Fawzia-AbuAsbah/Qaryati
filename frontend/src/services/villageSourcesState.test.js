@@ -5,7 +5,7 @@ import { createSourcesService } from './sourcesService.js'
 import { createVillageSourcesState } from './villageSourcesState.js'
 import { createAuthService } from './authService.js'
 import { createAuthSession } from './authSession.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 
 const dto = { id: 12, title: 'Synthetic source', publisher: null, author: null, sourceType: 'BOOK', url: null,
   publicationDate: null, accessedAt: null, citation: null, createdAt: '2026-11-27T12:00:00Z' }
@@ -266,7 +266,7 @@ test('failed effective-role refresh redacts the linking store and initiates no p
   assert.equal(calls.length, before)
 })
 
-test('linking does not enable the public Village capability or change the mock default', () => {
-  assert.equal(publicVillageContractsVerified, false)
+test('linking does not approve public catalogues or rich sections and mock remains default', () => {
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
 })

@@ -6,12 +6,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
-import { publicVillageContractsVerified } from './villageMode.js'
+import { publicVillageCapabilities } from './villageMode.js'
 
 // Render the actual JSX with installed Vite/React, without a DOM, HTTP listener,
 // dependency additions or backend. Only the existing village-data hook and
 // integration descriptor are replaced in this isolated module graph.
-let server, components, AuthContext, explorer, details
+let server, components, AuthContext, explorer, details, listing
 test.before(async () => {
   server = await createServer({
     root: fileURLToPath(new URL('../../', import.meta.url)), configFile: false, envDir: false,
@@ -28,7 +28,7 @@ test.before(async () => {
     server: { middlewareMode: true, hmr: false, watch: null },
     optimizeDeps: { noDiscovery: true, include: [] },
   })
-  const [panel, apiDetails, sources, reverse, context, hook, integration] = await Promise.all([
+  const [panel, apiDetails, sources, reverse, context, hook, integration, list, listService] = await Promise.all([
     server.ssrLoadModule('/src/components/sources/VillageSourcesPanel.jsx'),
     server.ssrLoadModule('/src/components/ApiVillageDetails.jsx'),
     server.ssrLoadModule('/src/pages/SourcesPage.jsx'),
@@ -36,15 +36,19 @@ test.before(async () => {
     server.ssrLoadModule('/src/auth/authContext.js'),
     server.ssrLoadModule('/src/services/useExplorerData.js'),
     server.ssrLoadModule('/src/services/villageDetailsService.js'),
+    server.ssrLoadModule('/src/pages/VillageExplorer.jsx'),
+    server.ssrLoadModule('/src/services/villageExplorerService.js'),
   ])
   components = { Panel: panel.default, View: panel.VillageSourcesView, Details: apiDetails.default,
-    Sources: sources.default, Reverse: reverse.default }
+    Sources: sources.default, Reverse: reverse.default, Explorer: list.default }
   AuthContext = context.AuthContext; explorer = hook; details = integration.villageDetailsService
+  listing = listService.villageExplorerService
 })
 test.after(async () => { await server?.close() })
-test.beforeEach(() => { details.available = false; explorer.setResult({ loading: true, retry() {} }) })
+test.beforeEach(() => { details.available = false; listing.mode = 'api'; explorer.setResult({ loading: true, retry() {} }) })
 
-const village = Object.freeze({ id: '42', backendId: 42, name: 'Synthetic village', governorateId: 2, coordinates: null })
+const village = Object.freeze({ id: '42', backendId: 42, name: 'Synthetic village', nameAr: 'Synthetic village', nameEn: null,
+  governorateId: 2, localAuthorityId: null, latitude: null, longitude: null, coordinates: null })
 const source = Object.freeze({ id: '12', backendId: 12, title: 'Synthetic source' })
 const association = Object.freeze({ villageId: '42', sourceId: '12', claimNote: '<script>private note</script>' })
 const ready = { linksStatus: 'ready', links: [], linksError: null, catalogStatus: 'ready', catalog: [source],
@@ -65,19 +69,84 @@ function view(state = ready, permissions = { read: true, write: true }) {
 }
 
 test('actual API Details mounts the real panel with the loaded village identity and integration descriptor', () => {
-  details.available = true // Test-only descriptor; the shipped capability remains false.
+  details.available = true // Test-only mutable integration descriptor.
   explorer.setResult({ data: { ...village, namesById: new Map(), items: [] }, loading: false, retry() {} })
   const html = render(components.Details)
   assert.match(html, /data-village-id="42"/)
   assert.match(html, /aria-label="مصادر القرية"/)
   assert.equal(html.includes('ربط مصدر موجود'), false) // No form before authenticated lists are loaded.
-  assert.equal(publicVillageContractsVerified, false)
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
 })
 
 test('actual Details wiring respects the closed integration even with a numeric village and ADMIN', () => {
   explorer.setResult({ data: { ...village, namesById: new Map(), items: [] }, loading: false, retry() {} })
   assert.equal(render(components.Details).includes('data-village-id='), false)
-  assert.equal(publicVillageContractsVerified, false)
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+})
+
+test('actual public Details renders only verified basic fields with honest unsupported-section and name states', () => {
+  details.available = true
+  explorer.setResult({ data: village, loading: false, retry() {} })
+  const html = render(components.Details, {}, session([], { status: 'anonymous', user: null }))
+  assert.match(html, /Synthetic village/)
+  assert.match(html, /معرّف المحافظة/)
+  assert.match(html, /اسم المحافظة غير متاح/)
+  assert.match(html, /غير متاحة من الخدمة العامة/)
+  assert.equal(html.includes('data-protected-village-id='), false)
+  assert.equal(html.includes('data-village-id='), false)
+  assert.equal(html.includes('verification-panel'), false)
+  assert.equal(html.includes('conflict-panel'), false)
+  assert.equal(html.includes('DRAFT'), false)
+  assert.equal(html.includes('<img'), false)
+})
+
+for (const auth of [session(['VIEWER']), session(['EDITOR']), session(['ADMIN']), session(['VIEWER', 'ADMIN']),
+  session([]), session([], { user: { username: 'synthetic', roles: null, rolesVerified: false } }),
+  session(['ADMIN'], { rolesStale: true })]) {
+  test(`actual Details preserves authenticated history/conflict reads and isolates role-based Sources for ${JSON.stringify(auth.user.roles)}/${auth.rolesStale}`, () => {
+    details.available = true
+    explorer.setResult({ data: village, loading: false, retry() {} })
+    const html = render(components.Details, {}, auth)
+    assert.match(html, /data-protected-village-id="42"/)
+    assert.match(html, /aria-label="سجل تحقق القرية"/)
+    assert.match(html, /تعارضات بيانات القرية/)
+    const sourceAllowed = !auth.rolesStale && auth.user.roles?.length > 0
+    assert.equal(html.includes('data-village-id="42"'), sourceAllowed)
+  })
+}
+for (const auth of [session([], { status: 'anonymous', user: null }), session(['ADMIN'], { expiresAt: 0 })]) {
+  test(`actual Details removes protected panels for ${auth.status}/${auth.expiresAt === 0 ? 'expired' : 'logout'}`, () => {
+    details.available = true
+    explorer.setResult({ data: village, loading: false, retry() {} })
+    const html = render(components.Details, {}, auth)
+    assert.match(html, /معلومات القرية الأساسية/)
+    assert.equal(html.includes('data-protected-village-id='), false)
+  })
+}
+
+test('actual public Explorer has no fabricated catalogue, no editorial status and only public sorts', () => {
+  details.available = true
+  explorer.setResult({ data: { items: [village], governorates: [], total: 1, page: 1, totalPages: 1 }, loading: false, retry() {} })
+  const html = render(components.Explorer, {}, session([], { status: 'anonymous', user: null }), '/villages?governorateId=2&localAuthorityId=7&sortBy=updatedAt')
+  assert.match(html, /href="\/villages\/42"/)
+  assert.match(html, /قائمة التصفية غير متاحة/)
+  assert.match(html, /تصفية بمعرّف المحافظة/)
+  assert.match(html, /تصفية بمعرّف الهيئة المحلية/)
+  assert.match(html, /استُبدل ترتيب زمني قديم/)
+  assert.equal(html.includes('id="governorate"'), false)
+  assert.equal(html.includes('value="updatedAt"'), false)
+  assert.equal(html.includes('value="createdAt"'), false)
+  assert.equal(html.includes('DRAFT'), false)
+})
+
+test('actual mock Explorer preserves its name dropdown and slug cards', () => {
+  listing.mode = 'mock'
+  explorer.setResult({ data: { items: [{ id: 'battir', name: 'بتير', governorate: 'بيت لحم', images: [] }],
+    governorates: [{ id: 'بيت لحم', name: 'بيت لحم' }], total: 1, page: 1, totalPages: 1 }, loading: false, retry() {} })
+  const html = render(components.Explorer)
+  assert.match(html, /id="governorate"/)
+  assert.match(html, /href="\/villages\/battir"/)
+  assert.equal(html.includes('قائمة التصفية غير متاحة'), false)
 })
 
 test('actual Sources page has guidance instead of an identity-less village-linking panel or form', () => {

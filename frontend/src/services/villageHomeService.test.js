@@ -5,11 +5,11 @@ import { readExplorerQuery } from './explorerQuery.js'
 import { villageMapService } from './villageMapService.js'
 import { villageExplorerService } from './villageExplorerService.js'
 import { villageDetailsService } from './villageDetailsService.js'
-import { publicVillageContractsVerified } from './villageMode.js'
+import { publicVillageCapabilities } from './villageMode.js'
 
-test('all application data services share the mock default and still-closed gate', () => {
+test('all application data services keep mock default and independent public capabilities', () => {
   for (const service of [villageHomeService, villageMapService, villageExplorerService, villageDetailsService]) assert.equal(service.mode, 'mock')
-  assert.equal(publicVillageContractsVerified, false)
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
 })
 
 for (const query of ['بتير', ' بَتّير & أرطاس ', 'قرية?status=DRAFT&villageId=42', '100%_!', '', '  ']) {
@@ -28,10 +28,10 @@ for (const query of ['بتير', ' بَتّير & أرطاس ', 'قرية?status
   })
 }
 
-for (const publicationVerified of [false, true, 'true']) {
-  test(`API featured content stays unavailable with no HTTP or arbitrary selection (gate ${String(publicationVerified)})`, async t => {
+for (const browsingVerified of [false, true, 'true']) {
+  test(`API featured content stays unavailable with no HTTP or arbitrary selection (gate ${String(browsingVerified)})`, async t => {
     const request = t.mock.fn(() => { throw new Error('No approved featured endpoint') })
-    const result = await createVillageHomeService({ mode: 'api', publicationVerified, request }).getFeatured()
+    const result = await createVillageHomeService({ mode: 'api', browsingVerified, request }).getFeatured()
     assert.deepEqual(result, { status: 'unavailable', reason: 'FEATURED_CONTRACT_UNCONFIRMED', items: [] })
     assert.equal(request.mock.callCount(), 0)
   })

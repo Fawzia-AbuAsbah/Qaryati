@@ -5,7 +5,7 @@ import { createAuthService } from './authService.js'
 import { createAuthSession } from './authSession.js'
 import { createVillageExplorerService } from './villageExplorerService.js'
 import { createVillageHomeService } from './villageHomeService.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 
 const credentials = { username: 'reader', password: 'sample-password' }
 const response = (dto, status = 200, headers) => new Response(JSON.stringify(dto), { status, headers })
@@ -342,11 +342,11 @@ test('logout aborts protected requests; dispose cleans timers and can be reused 
 
 test('authentication is independent of publication approval and preserves default mock browsing', async t => {
   const { store, calls } = fixture(t)
-  const forbiddenRequest = () => { assert.fail('The closed village gate must prevent every API request') }
-  assert.equal(publicVillageContractsVerified, false)
+  const forbiddenRequest = () => { assert.fail('An explicitly disabled browsing capability must prevent every API request') }
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
-  await store.login(credentials) // Auth requests work while public village requests remain closed.
-  const apiVillages = createVillageExplorerService({ mode: 'api', request: forbiddenRequest })
+  await store.login(credentials) // Auth and a disabled public capability remain independent.
+  const apiVillages = createVillageExplorerService({ mode: 'api', browsingVerified: false, request: forbiddenRequest })
   await assert.rejects(apiVillages.listVillages(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   await assert.rejects(apiVillages.listGovernorates(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   const mockVillages = createVillageExplorerService({ request: forbiddenRequest })

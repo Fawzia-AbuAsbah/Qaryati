@@ -3,7 +3,7 @@ import test from 'node:test'
 import { createVerificationPanelState } from './verificationPanelState.js'
 import { createVerificationService } from './verificationService.js'
 import { createApiClient } from './apiClient.js'
-import { publicVillageContractsVerified, villageDataMode } from './villageMode.js'
+import { publicVillageCapabilities, villageDataMode } from './villageMode.js'
 import { createVillageDetailsService } from './villageDetailsService.js'
 
 const record = Object.freeze({ id: '7', entityId: '42', decision: 'VERIFIED', reason: null, reviewerUserId: 12, reviewedAt: '2026-11-27T10:00:00Z' })
@@ -199,11 +199,11 @@ test('cleanup cancels pre-dispatch work, detaches listeners and supports a Stric
   assert.equal(store.getSnapshot().historyStatus, 'ready')
 })
 
-test('public API Details remains closed and default mock identity browsing makes no verification requests', async () => {
-  assert.equal(publicVillageContractsVerified, false)
+test('disabled identity capability sends no HTTP and mock browsing makes no verification requests', async () => {
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
   assert.equal(villageDataMode, 'mock')
   const request = () => assert.fail('No public API or protected verification requests')
-  const api = createVillageDetailsService({ mode: 'api', request })
+  const api = createVillageDetailsService({ mode: 'api', identityVerified: false, request })
   await assert.rejects(api.getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
   const mock = createVillageDetailsService({ request })
   assert.equal((await mock.getVillage('battir')).id, 'battir')
