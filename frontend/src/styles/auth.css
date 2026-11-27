@@ -1,0 +1,10 @@
+.auth-controls { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; }
+.auth-controls bdi { overflow-wrap: anywhere; }
+.auth-section { display: grid; justify-items: center; }
+.auth-form { display: grid; gap: .75rem; width: min(100%, 28rem); }
+.auth-form label { font-weight: 700; }
+.auth-form .button { margin-top: .25rem; }
+.auth-visibility { display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; padding: .4rem; color: var(--green); background: transparent; border: 0; border-radius: .3rem; }
+.auth-visibility:disabled { opacity: .5; cursor: default; }
+.auth-error { padding: .75rem; border: 1px solid #a34d28; border-radius: .4rem; color: #783719; background: #fff0e8; }
+.auth-form .auth-field-error { margin: 0; color: #783719; }

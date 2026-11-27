@@ -37,8 +37,9 @@ credentials are rejected. Endpoints cannot override or traverse outside the base
   own origin until a proxy is configured against the team's confirmed backend
   address. Alternatively, an explicitly configured absolute API base requires
   backend CORS support for the frontend origin. Neither the backend address nor
-  CORS/public-read changes are assumed or configured in this step. Mock mode
-  makes no API requests.
+  CORS/public-read changes are assumed or configured in this step. Mock village
+  browsing makes no API requests; explicit login uses the configured API base
+  independently of the village mode.
 - **Production:** the intended default is same-origin routing: the web server
   sends `/api/v1/*` to the backend and serves the frontend at other application
   paths. API paths must be excluded from the SPA HTML fallback. A separately
@@ -206,8 +207,8 @@ was not verified in a browser.
 `VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Home/Map/Explorer/Details default. `api` selects the API path;
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
-Home, Map, Explorer and Details. Authentication and data-quality pages are not
-integrated.
+Home, Map, Explorer and Details. Authentication uses the API base independently;
+data-quality pages are not integrated.
 
 The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
@@ -264,8 +265,9 @@ the mock hook is unchanged. Navigation and unmount abort the entire catalog/list
 operation, including corrections. Old success/error responses are ignored even
 if a transport ignores cancellation. URL correction is guarded against newer
 navigation and reuses only the matching, already-fetched response. Loading,
-empty, unavailable, 401, 403, rate-limit and network errors have Arabic states;
-there is no token handling, login redirect or authentication implementation.
+empty, unavailable, 401, 403, rate-limit and network errors have Arabic states.
+Village services do not receive session tokens or redirect to login; their
+publication gate remains closed independently of the new authentication service.
 
 API cards preserve the existing RTL layout and colors, show explicit missing
 name/governorate/image labels. Numeric Details links require available, matching
@@ -428,3 +430,86 @@ pipe could not connect. Browser layout, marker/popup/zoom interaction and tile-e
 rendering remain unverified interactively. HTTP application-shell checks are not
 browser verification. The backend/PostgreSQL were not started, no live API requests
 were made and live backend verification remains unavailable.
+
+## Authentication and session management
+
+Reviewed the fetched backend authentication DTOs, controller, rate-limit filter,
+security chain, JWT issuer/validator and database-backed authority converter.
+There were no incoming backend changes relative to this branch. Verified routes
+(relative to the existing API base):
+
+| Request | Contract |
+| --- | --- |
+| POST `/auth/login` | JSON `{username, password}`, both NotBlank; returns `{accessToken, tokenType: "Bearer", expiresIn}` with duration in seconds |
+| GET `/auth/me` | Bearer token; returns `{username}` only |
+
+Credentials are sent verbatim after required-field validation. No extra password
+policy, refresh endpoint, logout endpoint, synthetic account or demo session is
+introduced. Login is never retried automatically. Existing `ApiError` status,
+details, network cause and `Retry-After` are preserved by the service. The Arabic
+UI handles 400, 401, 403, 429 and network failures without echoing raw server text.
+The backend rate limiter can return an empty 429 with `Retry-After: 60`.
+Delay-seconds and HTTP-date headers disable manual resubmission until their
+deadline; expiry of the countdown does not send another login request.
+
+`authSession.js` keeps the token private in memory. `AuthProvider` and `useAuth`
+expose identity, status, expiration, login/logout, profile refresh and a scoped
+authenticated request method; they do not expose the token. Authentication is
+complete only after `/auth/me` succeeds. Expiration uses the returned `expiresIn`
+from the start of the login request, conservatively accounting for transit time.
+Timers, focus/visibility checks and pre-request checks expire sessions; large
+durations use bounded timer chunks. Reloading the app loses the session. There
+is no localStorage, sessionStorage, cookie or IndexedDB token persistence.
+
+Logout, expiry, provider cleanup and confirmed current-session 401 responses
+clear identity/token and abort pending work. A 403 denotes insufficient permission,
+and a network failure does not prove that an established session is invalid.
+Those profile errors retain the known identity with an explicit error until
+expiry/logout. Failed initial profile verification leaves the app anonymous.
+Concurrent login submissions are rejected; obsolete profile requests are aborted.
+Generation checks prevent late login/profile/request responses, including an old
+401 after a new login, from restoring or invalidating the current session.
+Passwords and tokens are never logged or embedded in URLs/configuration.
+
+`/login` provides required fields, password visibility, pending/cancel states,
+retry countdowns and accessible Arabic messages. Navbar shows the verified profile
+username and client-side logout after authentication. Public Home, Explorer,
+Details and Map remain unguarded, retain their existing renderers and default to
+mock data. Authentication does not attach credentials to village services, change
+the publication gate or approve live public reads. No requests occur on anonymous
+startup; auth requests begin only through explicit login/session operations.
+
+`RequireAuth` is available for future protected routes, with loading, login
+redirect and safe internal return navigation. No administrative route is added.
+**Effective roles remain blocked:** `/auth/me` still omits them. The JWT has no
+role claims; the server resolves authorities from the database. Profile mappings
+therefore expose `roles: null, rolesVerified: false`, ignore unsupported role
+properties and deny every role-dependent guard requirement. No username or JWT
+decoding is used to infer permissions. Frontend guards control UI only; backend
+authorization remains authoritative.
+
+The API base is shared with the existing client and is independent of the village
+mode/publication gate. No backend port or proxy has been assumed. Before live
+authentication can be verified, the team must confirm backend routing and, for a
+separate origin, applicable CORS and `Retry-After` response-header exposure. No
+backend/PostgreSQL was started and no real users were created.
+
+Validation: 515 dependency-free automated tests, production build and ESLint
+passed. Interactive browser verification was attempted but the computer-use native
+pipe was unavailable. HTTP 200 app-shell checks for Login, Home, Explorer, Details
+and Map do not establish interactive verification. Live authentication remains
+unverified; mocked HTTP coverage does not confirm deployment routing or CORS.
+
+Manual verification once a browser and confirmed test backend are available:
+
+1. Check Login in RTL on desktop/mobile and by keyboard: labels, required-field
+   errors, focus, password toggle, pending/cancel and duplicate submission.
+2. Using an existing authorized test account, verify the POST DTO, Bearer `/me`,
+   profile username and logout; check that tokens stay out of persistent storage,
+   URLs and console output. Reload should return to anonymous.
+3. Check invalid credentials, 403, offline/network failure and 429 countdown;
+   confirm one POST per submission and no automatic retry after the countdown.
+4. Check expiry, logout during pending requests and navigation away from Login;
+   late responses must never restore a terminated session.
+5. Check Home, Explorer, Details and Map mock navigation before/after login, and
+   verify that API village mode remains blocked with zero village API requests.
