@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
@@ -63,11 +64,21 @@ public class LoginController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<Map<String, String>> me(
+    public ResponseEntity<Map<String, Object>> me(
             Authentication authentication) {
 
+        var roles = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> "ROLE_VIEWER".equals(authority)
+                        || "ROLE_EDITOR".equals(authority)
+                        || "ROLE_ADMIN".equals(authority))
+                .map(authority -> authority.substring("ROLE_".length()))
+                .distinct()
+                .sorted()
+                .toList();
+
         return ResponseEntity.ok(
-                Map.of("username", authentication.getName())
+                Map.of("username", authentication.getName(), "roles", roles)
         );
     }
 }
