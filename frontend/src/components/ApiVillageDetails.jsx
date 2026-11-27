@@ -7,6 +7,7 @@ import { detailsErrorMessage, detailsPageTitle, detailsReturnNavigation } from '
 import { useExplorerData } from '../services/useExplorerData.js'
 import { villageMapService } from '../services/villageMapService.js'
 import { villageMapHref } from '../services/villageMapState.js'
+import VerificationPanel from './VerificationPanel.jsx'
 
 const statusLabels = { DRAFT: 'مسودة', UNDER_REVIEW: 'قيد المراجعة', VERIFIED: 'موثّق', REJECTED: 'مرفوض', DISPUTED: 'محل خلاف' }
 const precisionLabels = { EXACT: 'تاريخ محدد', YEAR: 'سنة', PERIOD: 'فترة', UNKNOWN: 'غير معروف' }
@@ -100,6 +101,7 @@ function ApiVillageContent({ village, returnTo, returnLabel }) {
       </section>
       <section className="detail-panel"><h2><Trees size={22} aria-hidden="true" />الزراعة</h2><p>بيانات الزراعة لهذه القرية غير متاحة من الخدمة حاليًا.</p></section>
       <section className="detail-panel"><h2><Building2 size={22} aria-hidden="true" />المرافق والمجتمع</h2><p>بيانات المرافق والمجتمع لهذه القرية غير متاحة من الخدمة حاليًا.</p></section>
+      <section className="detail-panel"><VerificationPanel village={village} integration={villageDetailsService} /></section>
     </div>
   </>
 }

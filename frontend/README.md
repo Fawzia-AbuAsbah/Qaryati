@@ -207,8 +207,9 @@ was not verified in a browser.
 `VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Home/Map/Explorer/Details default. `api` selects the API path;
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
-Home, Map, Explorer and Details. Authentication and gated Sources use the API base
-independently; verification, conflict and audit pages are not integrated.
+Home, Map, Explorer and Details. Authentication, gated Sources and the protected
+VerificationPanel use the API base independently; conflict and audit pages are not
+integrated.
 
 The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
@@ -619,3 +620,109 @@ preservation, validation/IDs, role restrictions and zero-request missing-role
 behavior, conflicts, errors, cancellation, logout/session changes, stale success
 and failure, duplicate submissions, safe login returns and existing mock regression.
 These automated checks do not establish interactive browser or live backend coverage.
+
+## Verification records (protected API Details panel)
+
+Started from clean `roaa/frontend-integration` at `eaa4ac8`, fetched remote refs,
+and found no incoming `origin/main` changes. Reviewed the verification controller,
+service, request/response DTOs, enum, entity/repository, data-quality exception
+handlers and security configuration. `/auth/me` still exposes only username.
+
+Verified paths, relative to the existing `/api/v1` API base:
+
+| Request | Contract / authorization |
+| --- | --- |
+| GET `/verifications?entityType=VILLAGE&entityId={id}` | `VerificationRecordResponse[]`; every authenticated user is explicitly permitted by both controller and service |
+| POST `/verifications` | `{entityType, entityId, decision, reason}`; 201 with one `VerificationRecordResponse`; ADMIN only |
+
+Only VILLAGE is supported. Entity type is NotBlank, maximum length 80, trimmed by
+the backend. Entity ID is a positive Long; frontend routes accept only canonical
+positive safe-integer decimal strings and send numeric IDs. Unsafe JSON Long IDs
+and mock slugs are rejected. Supported decisions are VERIFIED, REJECTED and
+NEEDS_REVISION. Reason is nullable free text, with no invented required-field or
+length restriction. No update/delete/approval endpoints or pagination are exposed.
+
+Response fields are `id`, `entityType`, `entityId`, `reviewerUserId`, `decision`,
+`reason` and `reviewedAt`. Adapters validate identity/decision, reject malformed,
+duplicate or wrong-village records, and preserve backend array order without
+client sorting. The repository orders by reviewedAt descending; tie ordering is
+not strengthened in the browser. Exact reason text, null/empty values, numeric
+reviewer IDs and actual OffsetDateTime timestamps (including offset/fractional
+seconds) are preserved. Missing reviewer/time metadata stays unavailable; no
+reviewer name, current username or browser-generated timestamp is substituted.
+
+Creation records a verification decision and its audit entry. The reviewed service
+does **not** update village status. The panel explicitly describes that behavior;
+it neither changes local village status nor sends a village update request.
+
+`verificationService.js` uses AuthProvider's existing scoped request/getSnapshot
+architecture and unchanged API client. Authentication-only read permission reuses
+`authAccessDecision`; ADMIN creation reuses the existing verified-role helper and
+its still-closed effective-role contract. Missing roles do not block the verified
+GET contract, but **all actual application POSTs remain blocked**. No environment
+override, inferred JWT claims, synthetic users or administrator sessions are added.
+Tests inject isolated role fixtures only into service factories.
+
+The reusable Arabic RTL `VerificationPanel` mounts in `ApiVillageDetails` after
+a real village identity loads. It reuses the numeric-identity/integration guard;
+unavailable API integrations, mismatched IDs and mock slugs cannot load protected
+history. Anonymous users see a Login link with a safe internal return URL. The
+mock Details renderer does not mount the panel. The shared public publication
+gate remains false, so actual app history reads also remain unavailable until
+real API village identity integration is approved and available. No manual-ID
+lookup bypass or protected data is added to public mock browsing.
+
+History has separate loading, empty, forbidden and error states, with explicit
+unavailable metadata labels. Administrator-only form logic supplies accessible
+decision/reason labels, validation, pending state and duplicate-submission
+protection. The actual form is unavailable while effective roles are missing.
+No mutation is retried automatically. After confirmed creation, the created
+record remains a success while history reloads independently. Refresh failure
+shows a separate history error and a GET-only retry; it never reclassifies the
+POST as failed or automatically submits another decision. A failed/unconfirmed
+POST reports its own error and does not overwrite the existing history.
+
+The panel state controller reuses existing latest-read and mutation controllers.
+Village navigation/unmount cancels pending work and clears protected state.
+Session/profile replacement, logout and expiry invalidate old services, redact
+snapshots and suppress obsolete read/mutation callbacks. Existing auth handling
+clears confirmed current-session 401 failures and preserves the distinction from
+403 permission failures. No tokens are exposed, logged or persistently stored.
+Transport cancellation cannot undo a server mutation already committed; an
+uncertain write result advises checking history before manually retrying.
+
+Remaining enablement blockers are effective roles for ADMIN creation, confirmed
+backend routing/CORS, and approved real-village API integration. These frontend
+changes do not alter backend authorization or the public publication gate.
+
+Validation: all 650 dependency-free tests passed, including 67 new verification
+tests. `npm run build`, `npm run lint`, `git diff --check` and whitespace checks
+for every new file passed. Tests cover exact query/body/Bearer contracts, entity
+types/decisions/IDs, nullable metadata, response ordering, role restrictions,
+confirmed creation followed by refresh failure, duplicate submissions, status
+semantics, cancellation, logout/session replacement and existing regressions.
+
+Interactive browser verification was attempted but the computer-use native pipe
+could not connect. HTTP 200 app-shell checks do not establish interactive UI
+verification. Live authentication and verification API validation remain
+unavailable; no backend/PostgreSQL was started and no real verification records
+or users were created. No commit, push or merge was performed in this step.
+
+Manual verification once browser and approved test integration are available:
+
+1. Confirm mock Details, Home, Explorer, Map, Login and Sources navigation remain
+   functional, with no verification panel/data or verification requests in mock
+   browsing. Selecting gated API mode must still make zero public-data requests.
+2. After real-village integration is approved, check a known numeric village
+   identity: anonymous users should see Login, and an existing authenticated test
+   account should read only the selected village's history without needing roles.
+   Missing roles must leave the administrator form unavailable.
+3. Check Arabic RTL layout, keyboard/focus behavior, labels, loading/empty/error
+   states, actual reviewer IDs/timestamps, missing metadata and server ordering.
+4. Use isolated mocked POST responses (or an explicitly approved test setup after
+   roles are exposed) to check ADMIN-only decisions, duplicate clicks and success
+   followed by a failed GET refresh. A history retry must issue only GET; village
+   status must remain unchanged.
+5. Check 400/401/403/404 and offline responses, then navigate between villages or
+   log out with delayed requests. Old history, saved records and errors must not
+   appear in the new village/session. Never bypass the application gates to test.

@@ -1,0 +1,10 @@
+.verification-panel { display: grid; gap: .8rem; }
+.verification-record { border-block-start: 1px solid var(--line); padding-block: .8rem; overflow-wrap: anywhere; }
+.verification-text { white-space: pre-wrap; }
+.verification-notice { padding: .75rem; background: #ecefdf; border-inline-start: .2rem solid #728653; border-radius: .3rem; }
+.verification-error { padding: .6rem; color: #783719; background: #fff0e8; border-radius: .3rem; }
+.verification-form, .verification-form fieldset { display: grid; gap: .8rem; min-width: 0; }
+.verification-form fieldset { border: 0; padding: 0; margin: 0; }
+.verification-form label { display: grid; gap: .35rem; font-weight: 650; }
+.verification-form select, .verification-form textarea { font: inherit; width: 100%; min-width: 0; padding: .6rem; border: 1px solid #bac6b8; border-radius: .45rem; color: var(--deep); background: white; }
+.verification-form textarea { resize: vertical; }
