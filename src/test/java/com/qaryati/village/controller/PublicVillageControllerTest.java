@@ -6,6 +6,7 @@ import com.qaryati.security.config.JwtAuthenticationConverterConfig;
 import com.qaryati.security.config.SecurityConfig;
 import com.qaryati.security.ratelimit.LoginRateLimitService;
 import com.qaryati.security.service.DatabaseUserDetailsService;
+import com.qaryati.village.dto.PublicVillageDetailResponse;
 import com.qaryati.village.dto.PublicVillageResponse;
 import com.qaryati.village.dto.VillageRequest;
 import com.qaryati.village.dto.VillageResponse;
@@ -71,6 +72,12 @@ class PublicVillageControllerTest {
             "Village EN", 2L, 3L, new BigDecimal("31.900000"), new BigDecimal("35.200000"));
     private static final PublicVillageResponse NULLABLE_PUBLIC = new PublicVillageResponse(4L,
             "Village without optional values", null, 2L, null, null, null);
+    private static final PublicVillageDetailResponse PUBLIC_DETAIL = new PublicVillageDetailResponse(1L,
+            "Village", "Village EN", 2L, 3L, new BigDecimal("31.900000"), new BigDecimal("35.200000"),
+            "Public origin", "Public location", new BigDecimal("700.25"), new BigDecimal("1.125"));
+    private static final PublicVillageDetailResponse NULLABLE_PUBLIC_DETAIL = new PublicVillageDetailResponse(4L,
+            "Village without optional values", null, 2L, null, null, null,
+            null, "Location without optional detail values", null, null);
     private static final String PUBLIC_JSON = """
             {"id":1,"nameAr":"Village","nameEn":"Village EN","governorateId":2,
              "localAuthorityId":3,"latitude":31.9,"longitude":35.2}
@@ -78,6 +85,17 @@ class PublicVillageControllerTest {
     private static final String NULLABLE_PUBLIC_JSON = """
             {"id":4,"nameAr":"Village without optional values","nameEn":null,
              "governorateId":2,"localAuthorityId":null,"latitude":null,"longitude":null}
+            """.trim();
+    private static final String PUBLIC_DETAIL_JSON = """
+            {"id":1,"nameAr":"Village","nameEn":"Village EN","governorateId":2,
+             "localAuthorityId":3,"latitude":31.9,"longitude":35.2,"nameOrigin":"Public origin",
+             "locationDescription":"Public location","elevationM":700.25,"areaKm2":1.125}
+            """.trim();
+    private static final String NULLABLE_PUBLIC_DETAIL_JSON = """
+            {"id":4,"nameAr":"Village without optional values","nameEn":null,
+             "governorateId":2,"localAuthorityId":null,"latitude":null,"longitude":null,
+             "nameOrigin":null,"locationDescription":"Location without optional detail values",
+             "elevationM":null,"areaKm2":null}
             """.trim();
     private static final Instant TIME = Instant.parse("2026-11-04T12:00:00.123456Z");
     private static final VillageResponse EDITORIAL = new VillageResponse(1L, 2L, null, "Village",
@@ -111,8 +129,8 @@ class PublicVillageControllerTest {
                 .andExpect(jsonPath("$.*", hasSize(11)))
                 .andExpect(jsonPath("$.content[0].*", hasSize(7)))
                 .andExpect(jsonPath("$.content[1].*", hasSize(7)));
-        assertNoEditorialFields(result, "$.content[0]");
-        assertNoEditorialFields(result, "$.content[1]");
+        assertCollectionFieldsOnly(result, "$.content[0]");
+        assertCollectionFieldsOnly(result, "$.content[1]");
         verify(service).getPublicActive(0, 20, null, null, null, "id", "asc");
         verifyNoMoreInteractions(service);
         verifyNoInteractions(decoder, users);
@@ -120,14 +138,15 @@ class PublicVillageControllerTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void anonymousDetailHasExactlySevenPublicFieldsIncludingOptionalNulls(boolean optionalNulls) throws Exception {
-        var response = optionalNulls ? NULLABLE_PUBLIC : PUBLIC;
+    void anonymousDetailHasExactlyElevenPublicFieldsIncludingOptionalNulls(boolean optionalNulls) throws Exception {
+        var response = optionalNulls ? NULLABLE_PUBLIC_DETAIL : PUBLIC_DETAIL;
         when(service.getPublicById(response.id())).thenReturn(response);
 
         var result = mvc.perform(get(PUBLIC_BASE + "/" + response.id())).andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(content().json(optionalNulls ? NULLABLE_PUBLIC_JSON : PUBLIC_JSON, JsonCompareMode.STRICT))
-                .andExpect(jsonPath("$.*", hasSize(7)));
+                .andExpect(content().json(optionalNulls ? NULLABLE_PUBLIC_DETAIL_JSON : PUBLIC_DETAIL_JSON,
+                        JsonCompareMode.STRICT))
+                .andExpect(jsonPath("$.*", hasSize(11)));
         assertNoEditorialFields(result, "$");
         verify(service).getPublicById(response.id());
         verifyNoMoreInteractions(service);
@@ -154,7 +173,7 @@ class PublicVillageControllerTest {
                 .andExpect(jsonPath("$.hasNext").value(true))
                 .andExpect(jsonPath("$.hasPrevious").value(page > 0))
                 .andExpect(jsonPath("$.empty").value(false));
-        assertNoEditorialFields(result, "$.content[0]");
+        assertCollectionFieldsOnly(result, "$.content[0]");
         verify(service).getPublicActive(page, size, null, null, null, "id", "asc");
         verifyNoMoreInteractions(service);
         verifyNoInteractions(decoder, users);
@@ -298,13 +317,14 @@ class PublicVillageControllerTest {
         verifyNoMoreInteractions(service);
     }
 
-    @ParameterizedTest
-    @ValueSource(longs = {11L, 99L})
-    void serviceReportsMissingOrHiddenVillageThroughTheSame404Contract(Long id) throws Exception {
+    @ParameterizedTest(name = "{0} detail uses the same 404 contract")
+    @CsvSource({"DRAFT,11", "UNDER_REVIEW,12", "REJECTED,13", "ARCHIVED,14", "MISSING,99"})
+    void serviceReportsMissingOrHiddenVillageThroughTheSame404Contract(String scenario, Long id) throws Exception {
         // The service decides whether a row is missing or hidden; MVC exposes neither a second lookup nor its reason.
         when(service.getPublicById(id)).thenThrow(new ResourceNotFoundException("Village", id));
 
         mvc.perform(get(PUBLIC_BASE + "/" + id)).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.*", hasSize(5)))
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("Not Found"))
                 .andExpect(jsonPath("$.message").value("Village with id " + id + " not found"))
@@ -321,22 +341,23 @@ class PublicVillageControllerTest {
 
     @ParameterizedTest
     @MethodSource("publicRoles")
-    void validBearerAlwaysUsesTheSamePublicProjectionRegardlessOfRoles(String role, boolean detail)
+    void validBearerRolesDoNotChangeThePublicProjectionForEitherRoute(String role, boolean detail)
             throws Exception {
         authenticate(role);
-        if (detail) when(service.getPublicById(1L)).thenReturn(PUBLIC);
+        if (detail) when(service.getPublicById(1L)).thenReturn(PUBLIC_DETAIL);
         else stubPublicPage();
 
         var result = mvc.perform(get(detail ? PUBLIC_BASE + "/1" : PUBLIC_BASE)
                         .header("Authorization", "Bearer token"))
                 .andExpect(status().isOk());
         if (detail) {
-            result.andExpect(content().json(PUBLIC_JSON, JsonCompareMode.STRICT));
+            result.andExpect(content().json(PUBLIC_DETAIL_JSON, JsonCompareMode.STRICT))
+                    .andExpect(jsonPath("$.*", hasSize(11)));
             assertNoEditorialFields(result, "$");
             verify(service).getPublicById(1L);
         } else {
             result.andExpect(content().json(singlePublicPageJson(), JsonCompareMode.STRICT));
-            assertNoEditorialFields(result, "$.content[0]");
+            assertCollectionFieldsOnly(result, "$.content[0]");
             verify(service).getPublicActive(0, 20, null, null, null, "id", "asc");
         }
         verifyNoMoreInteractions(service);
@@ -470,11 +491,19 @@ class PublicVillageControllerTest {
     }
 
     private ResultActions assertNoEditorialFields(ResultActions result, String prefix) throws Exception {
-        for (String field : List.of("status", "createdAt", "updatedAt", "archivedAt", "nameOrigin",
-                "locationDescription", "elevationM", "areaKm2", "sourceIds", "claimNote", "auditLogs")) {
+        for (String field : List.of("status", "createdAt", "updatedAt", "archivedAt", "sourceIds", "sources",
+                "rawSources", "claimNote", "notes", "auditLogs", "users", "userId", "actorUserId", "reviewerUserId")) {
             result.andExpect(jsonPath(prefix + "." + field).doesNotHaveJsonPath());
         }
         return result;
+    }
+
+    private ResultActions assertCollectionFieldsOnly(ResultActions result, String prefix) throws Exception {
+        assertNoEditorialFields(result, prefix);
+        for (String field : List.of("nameOrigin", "locationDescription", "elevationM", "areaKm2")) {
+            result.andExpect(jsonPath(prefix + "." + field).doesNotHaveJsonPath());
+        }
+        return result.andExpect(jsonPath(prefix + ".*", hasSize(7)));
     }
 
     private void stubDecoder() {

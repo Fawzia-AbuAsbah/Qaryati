@@ -1,7 +1,7 @@
 package com.qaryati.village.controller;
 
+import com.qaryati.village.dto.PublicVillageDetailResponse;
 import com.qaryati.village.dto.PublicVillagePageResponse;
-import com.qaryati.village.dto.PublicVillageResponse;
 import com.qaryati.village.service.VillageService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,7 +43,7 @@ public class PublicVillageController {
     }
 
     @GetMapping("/{id}")
-    public PublicVillageResponse getById(@PathVariable Long id, @RequestParam Map<String, String> parameters) {
+    public PublicVillageDetailResponse getById(@PathVariable Long id, @RequestParam Map<String, String> parameters) {
         rejectUnexpectedParameters(parameters, Set.of());
         return service.getPublicById(id);
     }

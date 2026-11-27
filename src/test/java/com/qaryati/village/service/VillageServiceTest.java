@@ -726,16 +726,32 @@ class VillageServiceTest {
             village.setLocalAuthority(null);
             village.setLatitude(null);
             village.setLongitude(null);
+            village.setNameOrigin(null);
+            village.setElevationM(null);
+            village.setAreaKm2(null);
         }
         when(repository.findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED))
                 .thenReturn(Optional.of(village));
 
-        var result = service.getPublicById(1L);
+        PublicVillageDetailResponse result = service.getPublicById(1L);
 
-        assertEquals(new PublicVillageResponse(1L, "  Arabic  ", optionalValues ? "  English  " : null,
+        assertEquals(new PublicVillageDetailResponse(1L, "  Arabic  ", optionalValues ? "  English  " : null,
                 10L, optionalValues ? 20L : null,
                 optionalValues ? new BigDecimal("32.123456") : null,
-                optionalValues ? new BigDecimal("35.654321") : null), result);
+                optionalValues ? new BigDecimal("35.654321") : null,
+                optionalValues ? "Origin" : null,
+                "Location",
+                optionalValues ? new BigDecimal("-430.25") : null,
+                optionalValues ? new BigDecimal("12.345") : null), result);
+        assertTrue(PublicVillageDetailResponse.class.isRecord());
+        assertEquals(List.of("id", "nameAr", "nameEn", "governorateId", "localAuthorityId", "latitude", "longitude",
+                        "nameOrigin", "locationDescription", "elevationM", "areaKm2"),
+                Arrays.stream(PublicVillageDetailResponse.class.getRecordComponents()).map(component -> component.getName()).toList());
+        assertEquals(List.of(Long.class, String.class, String.class, Long.class, Long.class, BigDecimal.class,
+                        BigDecimal.class, String.class, String.class, BigDecimal.class, BigDecimal.class),
+                Arrays.stream(PublicVillageDetailResponse.class.getRecordComponents()).map(component -> component.getType()).toList());
+        assertEquals(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS,
+                PublicVillageDetailResponse.class.getAnnotation(com.fasterxml.jackson.annotation.JsonInclude.class).value());
         assertEquals(List.of("id", "nameAr", "nameEn", "governorateId", "localAuthorityId", "latitude", "longitude"),
                 Arrays.stream(PublicVillageResponse.class.getRecordComponents()).map(component -> component.getName()).toList());
         verify(repository).findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED);

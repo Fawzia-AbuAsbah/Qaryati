@@ -1,9 +1,11 @@
 # Frontend-backend API contracts and integration handoff
 
-Source snapshot: `Fawzia/functional-integration`, `29c1f0f`, 2026-11-27.
-Frontend consumer: Roaa's `roaa/frontend-integration` branch. That branch and its
-runtime configuration were not inspected. This document describes **existing
-backend source contracts**, not a successful live integration or deployment.
+Original source snapshot: `Fawzia/functional-integration`, `29c1f0f`, 2026-11-27.
+F6 public Village detail update: `Fawzia/final-integration`, based on `0f68b7e`.
+Roaa's frontend is now merged in this checkout; its public Village adapter/detail
+path was inspected for F6. Runtime configuration and browser integration remain
+unverified. This document describes **existing backend source contracts**, not a
+successful live integration or deployment.
 
 No application, test, database, provider or k6 execution was performed for this
 handoff. Historical offline results below were supplied by the developer.
@@ -80,12 +82,13 @@ Sources: [public controller](../../src/main/java/com/qaryati/village/controller/
 [public service methods](../../src/main/java/com/qaryati/village/service/VillageService.java#L89),
 [restricted detail query](../../src/main/java/com/qaryati/village/repository/VillageRepository.java#L20),
 [PublicVillageResponse](../../src/main/java/com/qaryati/village/dto/PublicVillageResponse.java#L8),
+[PublicVillageDetailResponse](../../src/main/java/com/qaryati/village/dto/PublicVillageDetailResponse.java),
 [PublicVillagePageResponse](../../src/main/java/com/qaryati/village/dto/PublicVillagePageResponse.java#L8).
 
 | Method and path | Access / input | Success | Domain failures |
 | --- | --- | --- | --- |
 | GET `/api/v1/public/villages` | Anonymous; query table below | 200 public Village page | 400 invalid/unsupported query |
-| GET `/api/v1/public/villages/{id}` | Anonymous; positive Id; **no query parameters** | 200 public Village | 400 invalid ID/query; 404 hidden or nonexistent ID |
+| GET `/api/v1/public/villages/{id}` | Anonymous; positive Id; **no query parameters** | 200 PublicVillageDetailResponse (11 fields) | 400 invalid ID/query; 404 hidden or nonexistent ID |
 
 Both routes select **VERIFIED AND non-archived** Villages. The list applies these
 predicates in the repository query before pagination/counting. Missing, DRAFT,
@@ -107,10 +110,24 @@ even collection query parameters. Search is a literal substring over Arabic name
 or case-insensitive English name; `%`, `_`, `!` are escaped. Database collation
 still governs name ordering/case behavior. URL-encode query values.
 
-Public Village JSON has **exactly seven fields**, with nullable keys included:
+Public Village **collection rows retain exactly seven fields**, with nullable keys included:
 `id:Id`, `nameAr:string`, `nameEn:string?`, `governorateId:Id`,
 `localAuthorityId:Id?`, `latitude:number?`, `longitude:number?`.
-It contains no status, timestamps, archive state, notes, sources or user IDs.
+The collection response, paging, search, filters and ordering are unchanged by F6.
+
+Public Village **detail JSON has exactly eleven fields**: those same seven plus:
+
+| Detail-only field | Java / JSON type | Nullability / meaning |
+| --- | --- | --- |
+| `nameOrigin` | String / string | Nullable descriptive text |
+| `locationDescription` | String / string | Required by the existing Village entity/request contract; stored description returned without a fabricated fallback |
+| `elevationM` | BigDecimal / number | Nullable elevation in metres; negative values are valid |
+| `areaKm2` | BigDecimal / number | Nullable area in square kilometres; existing validation requires a positive value when supplied |
+
+Both DTOs explicitly include null keys and contain no status, timestamps, archive
+state, editorial notes, sources or user IDs. Only these four additional descriptive
+fields are approved for public detail; child modules and other editorial fields
+remain protected. Render descriptive strings as text, not untrusted HTML.
 
 Village page envelope, for public and editorial variants:
 
@@ -141,6 +158,32 @@ Totals count only public-eligible Villages, including eligible Villages with no
 coordinates. **Do not create markers for null coordinates.** Map clients may need
 multiple pages; use the page metadata, not a single default page as the entire map.
 Offset pagination is not a cross-request snapshot during concurrent changes.
+
+Synthetic detail example (does not assert an existing fixture):
+
+```http
+GET /api/v1/public/villages/101
+```
+
+```json
+{
+  "id":101,"nameAr":"Synthetic Village","nameEn":null,
+  "governorateId":11,"localAuthorityId":null,"latitude":31.9,"longitude":35.2,
+  "nameOrigin":null,"locationDescription":"Synthetic location description",
+  "elevationM":null,"areaKm2":null
+}
+```
+
+**Coordinated frontend update required:** the merged
+[public adapter](../../frontend/src/services/publicVillageAdapters.js#L3) still
+accepts exactly seven keys, and
+[the detail service](../../frontend/src/services/villageDetailsService.js#L26)
+uses that adapter. It will reject this eleven-field detail response until a
+separate detail adapter is implemented. Preserve the seven-field list/map adapter;
+do not substitute the broader editorial adapter. The current
+[API detail view](../../frontend/src/components/ApiVillageDetails.jsx)
+also needs explicit rendering of these four fields. F6 makes no frontend edits
+and claims no browser or live integration validation.
 
 ### Public geographic catalogues (F5)
 
@@ -660,18 +703,20 @@ Synthetic public missing/hidden response shape:
 | --- | --- |
 | No CORS configuration found in backend controllers/configuration | Agree same-origin delivery or a frontend development proxy forwarding `/api/v1` to an independently verified backend. A separate-origin frontend requires explicit backend/edge CORS design and validation, including Authorization preflight; anonymous GET permission alone is not CORS. No ports/targets are approved here. |
 | Public Village reads and geographic catalogues are available | The F5 Governorate/Local Authority catalogue projections are anonymous; their original management endpoints remain protected. Names, relations, Population, Heritage, Agriculture, Community, sources, workflow/audit and geocoding remain protected. Public detail sections still require explicit policies and separate implementations. |
-| Public DTO has seven scalar fields only | Public detail cannot render histories, population, provenance or other sections using protected endpoints without login. Do not copy editorial responses into public caches/pages. |
+| Public collection has seven fields; public detail has eleven approved fields (F6) | The four detail descriptions do not release histories, population, provenance or other child sections. Do not copy editorial responses into public caches/pages. |
+| Merged frontend detail still uses the strict seven-field public adapter | Coordinate a dedicated eleven-field detail adapter and UI rendering before integrating F6; the current API-mode detail client rejects the expanded response. Collection/map clients retain seven fields. Browser behavior remains unverified. |
 | Population village filtering is implemented (F4) | Authenticated demographic panels can send optional positive villageId with page/size. Keep the filter on every page request; totals are server-filtered under the existing role visibility rules. Browser/database integration remains unverified. |
 | Publication workflow is incomplete | Village creation is DRAFT; verification records do not update Village.status. No application HTTP publication transition was found for Village or Population/Heritage. Define ownership/transitions before promising "approve and publish" UI behavior. Do not work around this by changing a database manually. |
 | Conflict resolution stores metadata/status only | Applying a selected value to the canonical Village is a separate missing workflow; do not show it as already applied. |
 | Parent/child eligibility differs | Population/Heritage read visibility checks child status but not current parent eligibility; Agriculture/Community/link reads have no public parent filter. Public-safe child queries/projections remain outstanding. |
 | Paging/filter/response contracts differ across modules | Use module-specific clients. Sources lack HTTP search/type filters; many arrays are unbounded; unknown query names may be ignored outside public Village. No generic search endpoint is implied. |
 | Point coordinates exist, richer map APIs do not | First public map can page through eligible Village coordinates. No GeoJSON/boundaries/bbox/clustering/tiles contract exists; confirm actual frontend requirements before proposing endpoints. Geocoding does not persist a selected Village location. |
-| No checked-in OpenAPI/Postman contract or frontend application found in this checkout | This source snapshot plus DTOs/MVC tests is the handoff contract. Frontend branch wiring, proxy deployment, browser behavior and a live end-to-end flow remain unverified. |
+| Frontend is merged; no checked-in OpenAPI/Postman contract was identified in the original handoff | This document plus DTOs/MVC tests is the handoff contract. Proxy deployment, browser behavior and a live end-to-end flow remain unverified. |
 
 ## 12. FRONTEND INTEGRATION CHECKLIST
 
 - [ ] Public Village pages/search/map use `/api/v1/public/villages` and its detail route.
+- [ ] Keep seven-field collection/map parsing separate from eleven-field public detail parsing; update the merged detail adapter/view for F6 before integration, preserving nulls and backend visibility rules.
 - [ ] Public geographic labels/filters use `/api/v1/public/governorates` and `/api/v1/public/local-authorities`, retaining governorateId when narrowing Local Authorities.
 - [ ] Authenticated editorial/admin pages use protected endpoints and their actual per-module role matrix.
 - [ ] Send JWT only where needed; omit stale/invalid Authorization headers on anonymous reads.
