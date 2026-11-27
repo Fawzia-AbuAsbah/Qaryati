@@ -10,6 +10,12 @@ public interface PopulationRecordRepository extends JpaRepository<PopulationReco
     org.springframework.data.domain.Page<PopulationRecord> findByVerificationStatus(
             VerificationStatus status, org.springframework.data.domain.Pageable pageable);
 
+    org.springframework.data.domain.Page<PopulationRecord> findByVillageId(
+            Long villageId, org.springframework.data.domain.Pageable pageable);
+
+    org.springframework.data.domain.Page<PopulationRecord> findByVillageIdAndVerificationStatus(
+            Long villageId, VerificationStatus status, org.springframework.data.domain.Pageable pageable);
+
     Optional<PopulationRecord> findByIdAndVerificationStatus(Long id, VerificationStatus status);
 
     boolean existsByVillageIdAndReferenceYearAndMethodologyAndSourceId(

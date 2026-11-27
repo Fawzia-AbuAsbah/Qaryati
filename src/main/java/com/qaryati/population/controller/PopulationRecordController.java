@@ -22,8 +22,9 @@ public class PopulationRecordController {
 
     @GetMapping
     public PopulationRecordPage getAll(@RequestParam(defaultValue = "0") int page,
-                                      @RequestParam(defaultValue = "20") int size) {
-        return service.getAll(page, size);
+                                      @RequestParam(defaultValue = "20") int size,
+                                      @RequestParam(required = false) Long villageId) {
+        return service.getAll(page, size, villageId);
     }
 
     @GetMapping("/{id}")

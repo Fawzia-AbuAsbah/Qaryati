@@ -45,11 +45,22 @@ public class PopulationRecordService {
     }
 
     public PopulationRecordPage getAll(int page, int size) {
+        return getAll(page, size, null);
+    }
+
+    public PopulationRecordPage getAll(int page, int size, Long villageId) {
         boolean privileged = authorize(false);
         if (page < 0 || size < 1 || size > 100) throw badRequest();
+        if (villageId != null) validId(villageId);
         var pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("referenceYear"), Sort.Order.asc("id")));
-        var result = privileged ? repository.findAll(pageable)
-                : repository.findByVerificationStatus(VerificationStatus.VERIFIED, pageable);
+        Page<PopulationRecord> result;
+        if (villageId == null) {
+            result = privileged ? repository.findAll(pageable)
+                    : repository.findByVerificationStatus(VerificationStatus.VERIFIED, pageable);
+        } else {
+            result = privileged ? repository.findByVillageId(villageId, pageable)
+                    : repository.findByVillageIdAndVerificationStatus(villageId, VerificationStatus.VERIFIED, pageable);
+        }
         return new PopulationRecordPage(result.getContent().stream().map(mapper::toResponse).toList(),
                 page, size, result.getTotalElements(), result.getTotalPages());
     }

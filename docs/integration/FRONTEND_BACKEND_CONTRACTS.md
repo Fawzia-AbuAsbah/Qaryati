@@ -269,6 +269,9 @@ of handlers creates reciprocal relations or offers public nested routes.
 
 ## 5. Population and Heritage/historical sections
 
+F4 Population filter update: source reviewed on `Fawzia/final-integration`, based
+on `4e2d137`. This update does not claim a live integration or database test run.
+
 All operations below are protected. Each service enforces authentication/roles.
 For **reads**, EDITOR/ADMIN see all child statuses; VIEWER sees VERIFIED children
 only, filtered before counting. Hidden detail returns 404. For **all writes,
@@ -294,12 +297,26 @@ For **each exact base in this table**, these five existing endpoints apply
 | DELETE `B/{id}` | W; positive Id | 204, physical deletion | 400 ID; 404 missing; 409 non-DRAFT |
 
 All lists accept `page=0`, `size=20`, with page>=0 and size 1-100.
-Population sorts `referenceYear DESC, id ASC` and **does not accept a villageId
-filter**. All four Heritage lists accept optional positive `villageId` and sort
+Population accepts optional `villageId:Id>0` and sorts `referenceYear DESC, id ASC`.
+Omitting villageId preserves the original global list. The filter is applied in
+the repository before pagination/counting: VIEWER receives only VERIFIED matching
+records and filtered totals; EDITOR/ADMIN receives matching records in all statuses.
+Zero, negative, malformed or overflowing villageId values return 400. A positive ID
+with no matching visible records returns 200 with empty content, totalElements=0
+and totalPages=0; no extra parent-existence lookup is performed. Reads still do
+not recheck the parent Village's publication/archive state. The five-field page
+envelope and existing role requirements are unchanged.
+
+Example: `GET /api/v1/population-records?villageId=101&page=0&size=20` (protected).
+Sources: [collection handler](../../src/main/java/com/qaryati/population/controller/PopulationRecordController.java#L23),
+[read service](../../src/main/java/com/qaryati/population/service/PopulationRecordService.java#L47),
+[filtered queries](../../src/main/java/com/qaryati/population/repository/PopulationRecordRepository.java#L13).
+
+All four Heritage lists accept optional positive `villageId` and sort
 ID ascending. Cultural Heritage also accepts `heritageType` and
 `verificationStatus`; requested status cannot broaden VIEWER visibility. There
 is no client sort parameter. Unknown query names are not explicitly rejected by
-these controllers, so a Population `?villageId=...` must not be mistaken for a filter.
+these controllers.
 Positive unmatched Heritage filters yield an empty page without checking parent existence.
 
 Each page declares `content:corresponding DTO[]`, `page:int`, `size:int`,
@@ -591,7 +608,7 @@ Synthetic public missing/hidden response shape:
 | No CORS configuration found in backend controllers/configuration | Agree same-origin delivery or a frontend development proxy forwarding `/api/v1` to an independently verified backend. A separate-origin frontend requires explicit backend/edge CORS design and validation, including Authorization preflight; anonymous GET permission alone is not CORS. No ports/targets are approved here. |
 | Only two Village GETs are anonymous | Governorate/Local Authority catalogues, names, relations, Population, Heritage, Agriculture, Community, sources, workflow/audit and geocoding remain protected. Public catalogue release and public detail sections need explicit policies and separate implementations. |
 | Public DTO has seven scalar fields only | Public detail cannot render histories, population, provenance or other sections using protected endpoints without login. Do not copy editorial responses into public caches/pages. |
-| Population list has only page/size | A per-Village demographic panel needs a separately implemented backend filter. Sending villageId now does not scope the results; filtering one global page in the browser gives incomplete results/counts. |
+| Population village filtering is implemented (F4) | Authenticated demographic panels can send optional positive villageId with page/size. Keep the filter on every page request; totals are server-filtered under the existing role visibility rules. Browser/database integration remains unverified. |
 | Publication workflow is incomplete | Village creation is DRAFT; verification records do not update Village.status. No application HTTP publication transition was found for Village or Population/Heritage. Define ownership/transitions before promising "approve and publish" UI behavior. Do not work around this by changing a database manually. |
 | Conflict resolution stores metadata/status only | Applying a selected value to the canonical Village is a separate missing workflow; do not show it as already applied. |
 | Parent/child eligibility differs | Population/Heritage read visibility checks child status but not current parent eligibility; Agriculture/Community/link reads have no public parent filter. Public-safe child queries/projections remain outstanding. |
@@ -609,7 +626,8 @@ Synthetic public missing/hidden response shape:
 - [ ] Handle 400/401/403/404/409, optional/non-JSON bodies, null fields and all pagination formats.
 - [ ] Keep public counts/records separate from editorial data; do not infer hidden state from 404.
 - [ ] Resend complete PUT forms/source associations where required; display lifecycle conflicts.
-- [ ] Resolve proxy/CORS, Population village filtering, publication workflows and required public sections before live integration.
+- [ ] Use the Population villageId filter for demographic panels and retain it while paging; do not filter a global page in the browser.
+- [ ] Resolve proxy/CORS, publication workflows and required public sections before live integration.
 - [ ] Review this snapshot against the exact backend/frontend commits selected for integration.
 - [ ] Obtain separate environment/execution approval before any live application, database, provider or load-test validation.
 

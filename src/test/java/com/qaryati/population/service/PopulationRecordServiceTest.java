@@ -159,4 +159,223 @@ class PopulationRecordServiceTest {
             else assertSame(failure, assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> service.create(request)));
         }
     }
+
+    @ParameterizedTest @ValueSource(strings = {"ADMIN", "EDITOR"})
+    void villageFilteredPrivilegedReadsPreserveAllStatusesAndPageMetadata(String role) {
+        role(role);
+        var pageable = PageRequest.of(2, 2, Sort.by(Sort.Order.desc("referenceYear"), Sort.Order.asc("id")));
+        var draft = readRecord(31L, 1L, 2021, VerificationStatus.DRAFT);
+        var disputed = readRecord(32L, 1L, 2019, VerificationStatus.DISPUTED);
+        when(repository.findByVillageId(1L, pageable))
+                .thenReturn(new PageImpl<>(List.of(draft, disputed), pageable, 9));
+
+        var result = service.getAll(2, 2, 1L);
+
+        assertEquals(2, result.page());
+        assertEquals(2, result.size());
+        assertEquals(9, result.totalElements());
+        assertEquals(5, result.totalPages());
+        assertEquals(2, result.content().size());
+        assertReadRecord(result.content().get(0), 31L, 1L, 2021, VerificationStatus.DRAFT);
+        assertReadRecord(result.content().get(1), 32L, 1L, 2019, VerificationStatus.DISPUTED);
+        verify(repository).findByVillageId(1L, pageable);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(villages, sources, audits);
+    }
+
+    @Test void villageFilteredViewerReadsConstrainVillageAndVerifiedBeforeCounting() {
+        role("VIEWER");
+        var pageable = PageRequest.of(1, 2, Sort.by(Sort.Order.desc("referenceYear"), Sort.Order.asc("id")));
+        var latest = readRecord(41L, 7L, 2022, VerificationStatus.VERIFIED);
+        var earlier = readRecord(42L, 7L, 2020, VerificationStatus.VERIFIED);
+        when(repository.findByVillageIdAndVerificationStatus(7L, VerificationStatus.VERIFIED, pageable))
+                .thenReturn(new PageImpl<>(List.of(latest, earlier), pageable, 7));
+
+        var result = service.getAll(1, 2, 7L);
+
+        assertEquals(1, result.page());
+        assertEquals(2, result.size());
+        assertEquals(7, result.totalElements());
+        assertEquals(4, result.totalPages());
+        assertEquals(2, result.content().size());
+        assertReadRecord(result.content().get(0), 41L, 7L, 2022, VerificationStatus.VERIFIED);
+        assertReadRecord(result.content().get(1), 42L, 7L, 2020, VerificationStatus.VERIFIED);
+        verify(repository).findByVillageIdAndVerificationStatus(7L, VerificationStatus.VERIFIED, pageable);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(villages, sources, audits);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"ADMIN", "EDITOR", "VIEWER"})
+    void absentVillageFilterPreservesTheTwoArgumentReadContract(String role) {
+        role(role);
+        var pageable = PageRequest.of(0, 3, Sort.by(Sort.Order.desc("referenceYear"), Sort.Order.asc("id")));
+        var status = role.equals("VIEWER") ? VerificationStatus.VERIFIED : VerificationStatus.DRAFT;
+        var first = readRecord(51L, 7L, 2021, status);
+        var second = readRecord(52L, 8L, 2020, status);
+        var page = new PageImpl<>(List.of(first, second), pageable, 8);
+        if (role.equals("VIEWER")) {
+            when(repository.findByVerificationStatus(VerificationStatus.VERIFIED, pageable)).thenReturn(page);
+        } else {
+            when(repository.findAll(pageable)).thenReturn(page);
+        }
+
+        var explicitNull = service.getAll(0, 3, null);
+        var existingOverload = service.getAll(0, 3);
+
+        assertEquals(explicitNull, existingOverload);
+        assertEquals(0, explicitNull.page());
+        assertEquals(3, explicitNull.size());
+        assertEquals(8, explicitNull.totalElements());
+        assertEquals(3, explicitNull.totalPages());
+        assertEquals(2, explicitNull.content().size());
+        assertReadRecord(explicitNull.content().get(0), 51L, 7L, 2021, status);
+        assertReadRecord(explicitNull.content().get(1), 52L, 8L, 2020, status);
+        if (role.equals("VIEWER")) {
+            verify(repository, times(2)).findByVerificationStatus(VerificationStatus.VERIFIED, pageable);
+        } else {
+            verify(repository, times(2)).findAll(pageable);
+        }
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(villages, sources, audits);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"ADMIN", "EDITOR", "VIEWER"})
+    void unknownPositiveVillageReturnsAnEmptyPageWithoutReferenceLookup(String role) {
+        role(role);
+        for (int size : List.of(1, 100)) {
+            var pageable = PageRequest.of(3, size, Sort.by(Sort.Order.desc("referenceYear"), Sort.Order.asc("id")));
+            var page = new PageImpl<PopulationRecord>(List.of(), pageable, 0);
+            if (role.equals("VIEWER")) {
+                when(repository.findByVillageIdAndVerificationStatus(Long.MAX_VALUE, VerificationStatus.VERIFIED, pageable))
+                        .thenReturn(page);
+            } else {
+                when(repository.findByVillageId(Long.MAX_VALUE, pageable)).thenReturn(page);
+            }
+
+            var result = service.getAll(3, size, Long.MAX_VALUE);
+
+            assertTrue(result.content().isEmpty());
+            assertEquals(3, result.page());
+            assertEquals(size, result.size());
+            assertEquals(0, result.totalElements());
+            assertEquals(0, result.totalPages());
+            if (role.equals("VIEWER")) {
+                verify(repository).findByVillageIdAndVerificationStatus(Long.MAX_VALUE, VerificationStatus.VERIFIED, pageable);
+            } else {
+                verify(repository).findByVillageId(Long.MAX_VALUE, pageable);
+            }
+        }
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(villages, sources, audits);
+    }
+
+    @ParameterizedTest @ValueSource(longs = {0L, -1L, Long.MIN_VALUE})
+    void invalidVillageFiltersAreRejectedBeforeAnyRepositoryAccess(long villageId) {
+        for (String role : List.of("ADMIN", "EDITOR", "VIEWER")) {
+            role(role);
+            var failure = assertThrows(ResponseStatusException.class, () -> service.getAll(0, 20, villageId));
+            assertEquals(400, failure.getStatusCode().value());
+        }
+        verifyNoInteractions(repository, villages, sources, audits);
+    }
+
+    @Test void villageFilteredReadsRetainPaginationValidationBeforeQuerying() {
+        role("VIEWER");
+        for (int[] page : List.of(new int[]{-1, 20}, new int[]{Integer.MIN_VALUE, 20},
+                new int[]{0, 0}, new int[]{0, -1}, new int[]{0, 101}, new int[]{0, Integer.MAX_VALUE})) {
+            for (Long villageId : Arrays.asList(null, 7L)) {
+                var failure = assertThrows(ResponseStatusException.class,
+                        () -> service.getAll(page[0], page[1], villageId));
+                assertEquals(400, failure.getStatusCode().value());
+            }
+        }
+        verifyNoInteractions(repository, villages, sources, audits);
+    }
+
+    @Test void villageFilteredReadsAuthenticateBeforeValidatingOrQuerying() {
+        for (var authentication : Arrays.asList(null,
+                UsernamePasswordAuthenticationToken.unauthenticated("member", null),
+                new AnonymousAuthenticationToken("test-key", "anonymous", List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ANONYMOUS"))))) {
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            assertThrows(AuthenticationCredentialsNotFoundException.class, () -> service.getAll(0, 20, 7L));
+            assertThrows(AuthenticationCredentialsNotFoundException.class, () -> service.getAll(-1, 0, 0L));
+        }
+        verifyNoInteractions(repository, villages, sources, audits);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"OTHER", "viewer", ""})
+    void villageFilteredReadsRejectUnsupportedRolesBeforeValidatingOrQuerying(String role) {
+        role(role);
+        assertThrows(AccessDeniedException.class, () -> service.getAll(0, 20, 7L));
+        assertThrows(AccessDeniedException.class, () -> service.getAll(-1, 0, 0L));
+        verifyNoInteractions(repository, villages, sources, audits);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"ADMIN", "EDITOR", "VIEWER"})
+    void villageFilteredRepositoryFailuresEscapeWithoutUnfilteredFallback(String role) {
+        role(role);
+        var pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("referenceYear"), Sort.Order.asc("id")));
+        var failure = new IllegalStateException("synthetic repository failure");
+        if (role.equals("VIEWER")) {
+            when(repository.findByVillageIdAndVerificationStatus(7L, VerificationStatus.VERIFIED, pageable))
+                    .thenThrow(failure);
+        } else {
+            when(repository.findByVillageId(7L, pageable)).thenThrow(failure);
+        }
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> service.getAll(0, 20, 7L)));
+
+        if (role.equals("VIEWER")) {
+            verify(repository).findByVillageIdAndVerificationStatus(7L, VerificationStatus.VERIFIED, pageable);
+        } else {
+            verify(repository).findByVillageId(7L, pageable);
+        }
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(villages, sources, audits);
+    }
+
+    @Test void villageFilteredDerivedQueriesUseTheRequiredAndPredicates() throws Exception {
+        var villageMethod = PopulationRecordRepository.class.getMethod("findByVillageId", Long.class, Pageable.class);
+        var verifiedMethod = PopulationRecordRepository.class.getMethod("findByVillageIdAndVerificationStatus",
+                Long.class, VerificationStatus.class, Pageable.class);
+        for (var method : List.of(villageMethod, verifiedMethod)) {
+            assertNull(method.getAnnotation(org.springframework.data.jpa.repository.Query.class));
+            var tree = new org.springframework.data.repository.query.parser.PartTree(method.getName(), PopulationRecord.class);
+            var alternatives = tree.stream().toList();
+            assertEquals(1, alternatives.size());
+            var parts = alternatives.getFirst().stream().toList();
+            assertEquals(method.equals(villageMethod) ? Set.of("villageId") : Set.of("villageId", "verificationStatus"),
+                    parts.stream().map(part -> part.getProperty().toDotPath()).collect(java.util.stream.Collectors.toSet()));
+            assertEquals(method.equals(villageMethod) ? 1 : 2, parts.size());
+            assertTrue(parts.stream().allMatch(part -> part.getType()
+                    == org.springframework.data.repository.query.parser.Part.Type.SIMPLE_PROPERTY));
+        }
+        verifyNoInteractions(repository, villages, sources, audits);
+    }
+
+    private PopulationRecord readRecord(Long id, Long villageId, int year, VerificationStatus status) {
+        var record = new PopulationRecord(villageId, year, java.time.LocalDate.of(year, 6, 15),
+                345, Methodology.ESTIMATE, 42L, "synthetic observation");
+        ReflectionTestUtils.setField(record, "id", id);
+        ReflectionTestUtils.setField(record, "verificationStatus", status);
+        ReflectionTestUtils.setField(record, "createdAt", java.time.Instant.parse("2025-01-01T00:00:00Z"));
+        ReflectionTestUtils.setField(record, "updatedAt", java.time.Instant.parse("2025-02-01T00:00:00Z"));
+        return record;
+    }
+
+    private void assertReadRecord(PopulationRecordResponse response, Long id, Long villageId,
+            int year, VerificationStatus status) {
+        assertEquals(id, response.id());
+        assertEquals(villageId, response.villageId());
+        assertEquals(year, response.referenceYear());
+        assertEquals(java.time.LocalDate.of(year, 6, 15), response.referenceDate());
+        assertEquals(345, response.populationCount());
+        assertEquals(Methodology.ESTIMATE, response.methodology());
+        assertEquals(42L, response.sourceId());
+        assertEquals("synthetic observation", response.notes());
+        assertEquals(status, response.verificationStatus());
+        assertEquals(java.time.Instant.parse("2025-01-01T00:00:00Z"), response.createdAt());
+        assertEquals(java.time.Instant.parse("2025-02-01T00:00:00Z"), response.updatedAt());
+    }
 }
