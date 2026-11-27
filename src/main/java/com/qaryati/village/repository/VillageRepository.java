@@ -2,6 +2,7 @@ package com.qaryati.village.repository;
 
 import com.qaryati.village.entity.Governorate;
 import com.qaryati.village.entity.Village;
+import com.qaryati.village.entity.VillageStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,6 +15,9 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface VillageRepository extends JpaRepository<Village, Long>, JpaSpecificationExecutor<Village> {
+
+    /** Apply public eligibility in the lookup itself; hidden rows are indistinguishable from missing rows. */
+    Optional<Village> findByIdAndStatusAndArchivedAtIsNull(Long id, VillageStatus status);
 
     /**
      * Active rows with static ascending-ID ordering and a derived active-row count.

@@ -551,12 +551,297 @@ class VillageServiceTest {
             if (!java.lang.reflect.Modifier.isPublic(method.getModifiers())) continue;
             var annotation = method.getAnnotation(Transactional.class);
             assertNotNull(annotation, method.getName());
-            boolean read = Set.of("getById", "getActive").contains(method.getName());
+            boolean read = Set.of("getById", "getActive", "getPublicActive", "getPublicById").contains(method.getName());
             assertEquals(read, annotation.readOnly(), method.getName());
             assertEquals(org.springframework.transaction.annotation.Propagation.REQUIRED,
                     annotation.propagation());
         }
         assertNull(VillageService.class.getAnnotation(Transactional.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void publicPageCombinesVerifiedActiveVisibilityAndFiltersBeforePaging() {
+        village.setStatus(VillageStatus.VERIFIED);
+        var pageable = PageRequest.of(2, 20, Sort.by(Sort.Order.desc("nameAr"), Sort.Order.asc("id")));
+        var source = new PageImpl<>(List.of(village), pageable, 73);
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(source);
+
+        var result = service.getPublicActive(2, 20, "  A%_!  ", 10L, 20L, "nameAr", "desc");
+
+        assertEquals(List.of(new PublicVillageResponse(1L, "  Arabic  ", "  English  ", 10L, 20L,
+                new BigDecimal("32.123456"), new BigDecimal("35.654321"))), result.getContent());
+        assertEquals(source.getPageable(), result.getPageable());
+        assertEquals(source.getTotalElements(), result.getTotalElements());
+        assertEquals(source.getTotalPages(), result.getTotalPages());
+
+        var specification = ArgumentCaptor.forClass(Specification.class);
+        verify(repository).findAll(specification.capture(), eq(pageable));
+        var root = mock(jakarta.persistence.criteria.Root.class, RETURNS_DEEP_STUBS);
+        var cb = mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+        var active = mock(jakarta.persistence.criteria.Predicate.class);
+        var verified = mock(jakarta.persistence.criteria.Predicate.class);
+        var governorateFilter = mock(jakarta.persistence.criteria.Predicate.class);
+        var authorityFilter = mock(jakarta.persistence.criteria.Predicate.class);
+        var arabicMatch = mock(jakarta.persistence.criteria.Predicate.class);
+        var englishMatch = mock(jakarta.persistence.criteria.Predicate.class);
+        var nameMatch = mock(jakarta.persistence.criteria.Predicate.class);
+        var conjunction = mock(jakarta.persistence.criteria.Predicate.class);
+        var englishName = mock(jakarta.persistence.criteria.Expression.class);
+        when(cb.isNull(root.get("archivedAt"))).thenReturn(active);
+        when(cb.equal(root.get("status"), VillageStatus.VERIFIED)).thenReturn(verified);
+        when(cb.equal(root.get("governorate").get("id"), 10L)).thenReturn(governorateFilter);
+        when(cb.equal(root.get("localAuthority").get("id"), 20L)).thenReturn(authorityFilter);
+        when(cb.like(root.get("nameAr"), "%A!%!_!!%", '!')).thenReturn(arabicMatch);
+        when(cb.lower(root.get("nameEn"))).thenReturn(englishName);
+        when(cb.like(englishName, "%a!%!_!!%", '!')).thenReturn(englishMatch);
+        when(cb.or(arabicMatch, englishMatch)).thenReturn(nameMatch);
+        when(cb.and(any(jakarta.persistence.criteria.Predicate[].class))).thenReturn(conjunction);
+
+        assertSame(conjunction, specification.getValue().toPredicate(root, null, cb));
+        var predicates = ArgumentCaptor.forClass(jakarta.persistence.criteria.Predicate[].class);
+        verify(cb).and(predicates.capture());
+        assertEquals(5, predicates.getValue().length);
+        assertEquals(Set.of(active, verified, governorateFilter, authorityFilter, nameMatch),
+                new HashSet<>(Arrays.asList(predicates.getValue())));
+        verify(cb).isNull(root.get("archivedAt"));
+        verify(cb).equal(root.get("status"), VillageStatus.VERIFIED);
+        verify(cb).equal(root.get("governorate").get("id"), 10L);
+        verify(cb).equal(root.get("localAuthority").get("id"), 20L);
+        verify(cb).like(root.get("nameAr"), "%A!%!_!!%", '!');
+        verify(cb).lower(root.get("nameEn"));
+        verify(cb).like(englishName, "%a!%!_!!%", '!');
+        verify(cb).or(arabicMatch, englishMatch);
+        verifyNoMoreInteractions(cb, repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @Test
+    void publicEmptyPagePreservesFilteredCountsAndRequestedPage() {
+        var source = new PageImpl<Village>(List.of(), PageRequest.of(3, 20, Sort.by("id")), 2);
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(source);
+
+        var result = service.getPublicActive(3, 20, null, null, null, null, null);
+
+        assertTrue(result.isEmpty());
+        assertEquals(source.getPageable(), result.getPageable());
+        assertEquals(2, result.getTotalElements());
+        assertEquals(source.getTotalPages(), result.getTotalPages());
+        verify(repository).findAll(any(Specification.class), eq(source.getPageable()));
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    static Stream<Arguments> publicSorts() {
+        var allowed = Stream.of("id", "nameAr", "nameEn").flatMap(field ->
+                Stream.of("asc", "DESC").map(direction -> {
+                    Sort sort = Sort.by(Sort.Direction.fromString(direction), field);
+                    if (!field.equals("id")) sort = sort.and(Sort.by("id"));
+                    return Arguments.of(field, direction, sort);
+                }));
+        return Stream.concat(allowed, Stream.of(
+                Arguments.of(null, null, Sort.by("id")),
+                Arguments.of("", "", Sort.by("id")),
+                Arguments.of(" \t", " \n", Sort.by("id"))));
+    }
+
+    @ParameterizedTest
+    @MethodSource("publicSorts")
+    void publicSortsAllowOnlyPublishedFieldsAndKeepStableIdTieBreaker(
+            String field, String direction, Sort expected) {
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
+
+        service.getPublicActive(0, 20, null, null, null, field, direction);
+
+        verify(repository).findAll(any(Specification.class), eq(PageRequest.of(0, 20, expected)));
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  ", "\t\n"})
+    @SuppressWarnings("unchecked")
+    void publicBlankSearchStillRequiresBothVerifiedAndUnarchived(String search) {
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
+        service.getPublicActive(0, 20, search, null, null, null, null);
+        var specification = ArgumentCaptor.forClass(Specification.class);
+        verify(repository).findAll(specification.capture(), eq(PageRequest.of(0, 20, Sort.by("id"))));
+        var root = mock(jakarta.persistence.criteria.Root.class);
+        var cb = mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+        var active = mock(jakarta.persistence.criteria.Predicate.class);
+        var verified = mock(jakarta.persistence.criteria.Predicate.class);
+        when(cb.isNull(root.get("archivedAt"))).thenReturn(active);
+        when(cb.equal(root.get("status"), VillageStatus.VERIFIED)).thenReturn(verified);
+
+        specification.getValue().toPredicate(root, null, cb);
+
+        var predicates = ArgumentCaptor.forClass(jakarta.persistence.criteria.Predicate[].class);
+        verify(cb).and(predicates.capture());
+        assertEquals(2, predicates.getValue().length);
+        assertEquals(Set.of(active, verified), new HashSet<>(Arrays.asList(predicates.getValue())));
+        verify(cb).isNull(root.get("archivedAt"));
+        verify(cb).equal(root.get("status"), VillageStatus.VERIFIED);
+        verifyNoMoreInteractions(cb, repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-1,20", "0,0", "0,-1", "0,101", "2147483647,2", "2147483647,100"})
+    void invalidPublicPaginationStopsBeforeAnyRepositoryAccess(int page, int size) {
+        status(400, () -> service.getPublicActive(page, size, null, null, null, null, null));
+        verifyNoInteractions(repository, governorates, authorities, clock);
+    }
+
+    static Stream<Arguments> invalidPublicFilters() {
+        return Stream.of(
+                Arguments.of("x".repeat(181), null, null, "id", "asc"),
+                Arguments.of(null, 0L, null, "id", "asc"),
+                Arguments.of(null, -1L, null, "id", "asc"),
+                Arguments.of(null, null, 0L, "id", "asc"),
+                Arguments.of(null, null, -1L, "id", "asc"),
+                Arguments.of(null, null, null, "createdAt", "asc"),
+                Arguments.of(null, null, null, "updatedAt", "asc"),
+                Arguments.of(null, null, null, "status", "asc"),
+                Arguments.of(null, null, null, "archivedAt", "asc"),
+                Arguments.of(null, null, null, "governorate.nameAr", "asc"),
+                Arguments.of(null, null, null, "id desc", "asc"),
+                Arguments.of(null, null, null, "id", "sideways"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidPublicFilters")
+    void invalidPublicFiltersStopBeforeAnyRepositoryAccess(String search, Long governorateId,
+            Long authorityId, String field, String direction) {
+        status(400, () -> service.getPublicActive(0, 20, search, governorateId, authorityId, field, direction));
+        verifyNoInteractions(repository, governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void publicDetailUsesOnlyRestrictedQueryAndWhitelistedNullableProjection(boolean optionalValues) {
+        village.setStatus(VillageStatus.VERIFIED);
+        if (!optionalValues) {
+            village.setNameEn(null);
+            village.setLocalAuthority(null);
+            village.setLatitude(null);
+            village.setLongitude(null);
+        }
+        when(repository.findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED))
+                .thenReturn(Optional.of(village));
+
+        var result = service.getPublicById(1L);
+
+        assertEquals(new PublicVillageResponse(1L, "  Arabic  ", optionalValues ? "  English  " : null,
+                10L, optionalValues ? 20L : null,
+                optionalValues ? new BigDecimal("32.123456") : null,
+                optionalValues ? new BigDecimal("35.654321") : null), result);
+        assertEquals(List.of("id", "nameAr", "nameEn", "governorateId", "localAuthorityId", "latitude", "longitude"),
+                Arrays.stream(PublicVillageResponse.class.getRecordComponents()).map(component -> component.getName()).toList());
+        verify(repository).findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @Test
+    void publicMissingAndHiddenDetailsShareNotFoundAndNeverFallBackToEditorialLookup() {
+        assertEquals("Village with id 1 not found",
+                assertThrows(ResourceNotFoundException.class, () -> service.getPublicById(1L)).getMessage());
+        verify(repository).findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @Test
+    void publicProjectionReadsParentProxyIdentifiersWithoutInitializingParents() {
+        var governorateProxy = mock(Governorate.class,
+                withSettings().extraInterfaces(org.hibernate.proxy.HibernateProxy.class));
+        var authorityProxy = mock(LocalAuthority.class,
+                withSettings().extraInterfaces(org.hibernate.proxy.HibernateProxy.class));
+        var governorateIdentifier = mock(org.hibernate.proxy.LazyInitializer.class);
+        var authorityIdentifier = mock(org.hibernate.proxy.LazyInitializer.class);
+        when(((org.hibernate.proxy.HibernateProxy) governorateProxy).getHibernateLazyInitializer())
+                .thenReturn(governorateIdentifier);
+        when(((org.hibernate.proxy.HibernateProxy) authorityProxy).getHibernateLazyInitializer())
+                .thenReturn(authorityIdentifier);
+        when(governorateIdentifier.getInternalIdentifier()).thenReturn(10L);
+        when(authorityIdentifier.getInternalIdentifier()).thenReturn(20L);
+        village.setGovernorate(governorateProxy);
+        village.setLocalAuthority(authorityProxy);
+        village.setStatus(VillageStatus.VERIFIED);
+        when(repository.findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED))
+                .thenReturn(Optional.of(village));
+
+        var result = service.getPublicById(1L);
+
+        assertEquals(10L, result.governorateId());
+        assertEquals(20L, result.localAuthorityId());
+        verify((org.hibernate.proxy.HibernateProxy) governorateProxy).getHibernateLazyInitializer();
+        verify((org.hibernate.proxy.HibernateProxy) authorityProxy).getHibernateLazyInitializer();
+        verify(governorateIdentifier).getInternalIdentifier();
+        verify(authorityIdentifier).getInternalIdentifier();
+        verify(repository).findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED);
+        verifyNoMoreInteractions(repository, governorateProxy, authorityProxy, governorateIdentifier, authorityIdentifier);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(longs = {0, -1, Long.MIN_VALUE})
+    void invalidPublicDetailIdsStopBeforeAnyRepositoryAccess(Long id) {
+        status(400, () -> service.getPublicById(id));
+        verifyNoInteractions(repository, governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"page", "detail"})
+    void publicInfrastructureFailuresPropagateWithoutFallback(String operation) {
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("Unavailable");
+        if (operation.equals("page")) {
+            when(repository.findAll(any(Specification.class), any(Pageable.class))).thenThrow(failure);
+            assertSame(failure, assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                    () -> service.getPublicActive(0, 20, null, null, null, null, null)));
+            verify(repository).findAll(any(Specification.class), eq(PageRequest.of(0, 20, Sort.by("id"))));
+        } else {
+            when(repository.findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED)).thenThrow(failure);
+            assertSame(failure, assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                    () -> service.getPublicById(1L)));
+            verify(repository).findByIdAndStatusAndArchivedAtIsNull(1L, VillageStatus.VERIFIED);
+        }
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(governorates, authorities, clock);
+    }
+
+    @Test
+    void publicDetailDerivedQueryRequiresIdAndVerifiedStatusAndNullArchive() throws Exception {
+        var method = VillageRepository.class.getMethod("findByIdAndStatusAndArchivedAtIsNull", Long.class, VillageStatus.class);
+        assertNull(method.getAnnotation(org.springframework.data.jpa.repository.Query.class));
+        var tree = new org.springframework.data.repository.query.parser.PartTree(method.getName(), Village.class);
+        var alternatives = tree.stream().toList();
+        assertEquals(1, alternatives.size());
+        var parts = alternatives.getFirst().stream().toList();
+        assertEquals(3, parts.size());
+        assertEquals(Map.of(
+                "id", org.springframework.data.repository.query.parser.Part.Type.SIMPLE_PROPERTY,
+                "status", org.springframework.data.repository.query.parser.Part.Type.SIMPLE_PROPERTY,
+                "archivedAt", org.springframework.data.repository.query.parser.Part.Type.IS_NULL),
+                parts.stream().collect(java.util.stream.Collectors.toMap(
+                        part -> part.getProperty().toDotPath(), part -> part.getType())));
+        verifyNoInteractions(repository, governorates, authorities, clock);
+    }
+
+    @ParameterizedTest
+    @EnumSource(VillageStatus.class)
+    void editorialDetailsStillIncludeEveryStatusAndArchivedRows(VillageStatus state) {
+        village.setStatus(state);
+        village.setArchivedAt(OLD);
+        when(repository.findById(1L)).thenReturn(Optional.of(village));
+
+        assertEquals(mapper.toResponse(village), service.getById(1L));
+
+        verify(repository).findById(1L);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(governorates, authorities, clock);
     }
 
     private void assertEditable(VillageRequest request, Village value) {

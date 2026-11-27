@@ -2,6 +2,7 @@ package com.qaryati.village.service;
 
 import com.qaryati.common.exception.DuplicateResourceException;
 import com.qaryati.common.exception.ResourceNotFoundException;
+import com.qaryati.village.dto.PublicVillageResponse;
 import com.qaryati.village.dto.VillageRequest;
 import com.qaryati.village.dto.VillageResponse;
 import com.qaryati.village.entity.Governorate;
@@ -83,6 +84,26 @@ public class VillageService {
         Village village = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Village", id));
         return mapper.toResponse(village);
+    }
+
+    @Transactional(readOnly = true)
+    public PublicVillageResponse getPublicById(Long id) {
+        validateVillageId(id);
+        Village village = repository.findByIdAndStatusAndArchivedAtIsNull(id, VillageStatus.VERIFIED)
+                .orElseThrow(() -> new ResourceNotFoundException("Village", id));
+        return PublicVillageResponse.from(mapper.toResponse(village));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PublicVillageResponse> getPublicActive(int page, int size, String search,
+                                                      Long governorateId, Long localAuthorityId,
+                                                      String sortBy, String sortDir) {
+        if (sortBy != null && !sortBy.isBlank() && !Set.of("id", "nameAr", "nameEn").contains(sortBy)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported public village sort field");
+        }
+        // Reuse validation and AND predicates; the repository applies eligibility before paging/counting.
+        return getActive(page, size, search, governorateId, localAuthorityId,
+                VillageStatus.VERIFIED.name(), sortBy, sortDir).map(PublicVillageResponse::from);
     }
 
     @Transactional(readOnly = true)
