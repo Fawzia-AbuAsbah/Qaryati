@@ -1,0 +1,16 @@
+.sources-page { display: grid; gap: 1.25rem; }
+.source-panel { display: grid; gap: .85rem; }
+.source-notice { padding: .75rem; background: #ecefdf; border-inline-start: .2rem solid #728653; border-radius: .3rem; }
+.source-error { color: #783719; background: #fff0e8; padding: .5rem; border-radius: .3rem; }
+.source-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .65rem; }
+.source-list li { border-block-end: 1px solid var(--line); padding-block: .5rem; overflow-wrap: anywhere; }
+.source-list p, .source-metadata dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-metadata { display: grid; gap: .6rem; margin: .8rem 0; }
+.source-metadata dt { font-weight: 700; }
+.source-metadata dd { margin-inline: 0; }
+.source-form { display: grid; gap: .8rem; margin-block: 1rem; }
+.source-form fieldset { display: grid; gap: .85rem; min-width: 0; border: 0; margin: 0; padding: 0; }
+.source-form label { display: grid; gap: .35rem; font-weight: 650; }
+.source-form input, .source-form select, .source-form textarea { font: inherit; width: 100%; min-width: 0; padding: .6rem; border: 1px solid #bac6b8; border-radius: .45rem; background: white; color: var(--deep); }
+.source-form textarea { resize: vertical; }
+.source-form :disabled { cursor: default; opacity: .65; }

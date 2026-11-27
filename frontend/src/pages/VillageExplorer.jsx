@@ -1,28 +1,69 @@
-﻿import { useCallback } from 'react'
-import { ChevronDown, Search } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+﻿import { useCallback, useEffect, useRef } from 'react'
+import { ChevronDown, MapPin, Search } from 'lucide-react'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import PageState from '../components/PageState.jsx'
 import VillageCard from '../components/VillageCard.jsx'
-import { listVillages } from '../services/villageService.js'
-import { useVillageData } from '../services/useVillageData.js'
+import { villageExplorerService, explorerErrorMessage, villageSortFields } from '../services/villageExplorerService.js'
+import { clearExplorerQuery, readExplorerQuery, updateExplorerQuery } from '../services/explorerQuery.js'
+import { useExplorerData } from '../services/useExplorerData.js'
+import { villageDetailsService } from '../services/villageDetailsService.js'
+import { villageDetailsHref } from '../services/villageDetailsState.js'
+import { villageMapService } from '../services/villageMapService.js'
+import { villageMapHref } from '../services/villageMapState.js'
 
 const number = new Intl.NumberFormat('ar')
+const sortLabels = { id: 'المعرّف', nameAr: 'الاسم العربي', nameEn: 'الاسم الإنجليزي', createdAt: 'تاريخ الإضافة', updatedAt: 'آخر تحديث' }
+
+function ApiVillageCard({ village, returnTo }) {
+  const detailsHref = villageDetailsHref(village.id, villageExplorerService, villageDetailsService)
+  const mapHref = villageMapHref(village, villageExplorerService, villageMapService)
+  return (
+    <article className="village-card">
+      <div className="card-scene missing-scene"><MapPin aria-hidden="true" /><p>صورة القرية غير متاحة</p></div>
+      <div className="card-body">
+        <p className="location"><MapPin size={16} aria-hidden="true" />{village.governorate ? `محافظة ${village.governorate}` : 'المحافظة غير متاحة'}</p>
+        <h3>{village.name ?? 'اسم القرية غير متاح'}</h3>
+        <div className="actions">
+          {detailsHref ? <Link className="card-link" to={detailsHref} state={{ explorerReturnTo: returnTo }}>تفاصيل القرية</Link> : <p>تفاصيل القرية غير متاحة حاليًا.</p>}
+          {mapHref && <Link className="card-link" to={mapHref}>عرض الموقع على الخريطة</Link>}
+        </div>
+      </div>
+    </article>
+  )
+}
 
 export default function VillageExplorer() {
   const [params, setParams] = useSearchParams()
-  const query = params.get('q') ?? ''
-  const governorate = params.get('governorate') ?? ''
-  const requestedPage = Number(params.get('page'))
-  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
-  const load = useCallback(() => listVillages({ query, governorate, page }), [query, governorate, page])
-  const { data, ...state } = useVillageData(load)
+  const { pathname, search } = useLocation()
+  const { query, governorate, governorateId, page, sortBy, sortDir } = readExplorerQuery(params)
+  const apiMode = villageExplorerService.mode === 'api'
+  const selectedGovernorate = apiMode ? governorateId : governorate
+  const requestKey = JSON.stringify([query, governorate, governorateId, page, sortBy, sortDir])
+  const normalizedResult = useRef(null)
+  const load = useCallback(signal => {
+    const cached = normalizedResult.current
+    normalizedResult.current = null
+    if (cached?.key === requestKey) {
+      return Promise.resolve(cached.data)
+    }
+    return villageExplorerService.listVillages({ query, governorate, governorateId, page, sortBy, sortDir, signal })
+  }, [query, governorate, governorateId, page, sortBy, sortDir, requestKey])
+  const { data, ...state } = useExplorerData(load)
+
+  useEffect(() => {
+    if (!data || !params.has('page') || params.get('page') === String(data.page)) return
+    // A navigation may have changed the browser URL before this effect runs.
+    if (window.location.pathname !== pathname || window.location.search !== search) return
+
+    // Reuse this response when correcting the URL changes the load callback.
+    normalizedResult.current = { key: JSON.stringify([query, governorate, governorateId, data.page, sortBy, sortDir]), data }
+    const next = new URLSearchParams(params)
+    next.set('page', String(data.page))
+    setParams(next, { replace: true })
+  }, [data, params, setParams, pathname, search, query, governorate, governorateId, sortBy, sortDir])
 
   function update(name, value, replace = false) {
-    const next = new URLSearchParams(params)
-    if (value) next.set(name, value)
-    else next.delete(name)
-    if (name !== 'page') next.delete('page')
-    setParams(next, { replace })
+    setParams(updateExplorerQuery(params, name, value), { replace })
   }
 
   return (
@@ -31,29 +72,43 @@ export default function VillageExplorer() {
       <section className="shell section" aria-label="دليل القرى">
         <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
           <label htmlFor="village-search">اسم القرية
-            <span className="field"><Search size={19} aria-hidden="true" /><input id="village-search" type="search" value={query} placeholder="مثال: بتير" onChange={(event) => update('q', event.target.value, true)} /></span>
+            <span className="field"><Search size={19} aria-hidden="true" /><input id="village-search" type="search" value={query} maxLength={apiMode ? 180 : undefined} disabled={!villageExplorerService.available} placeholder="مثال: بتير" onChange={(event) => update('q', event.target.value, true)} /></span>
           </label>
           <label htmlFor="governorate">المحافظة
             <span className="field select-field">
-              <select id="governorate" value={governorate} onChange={(event) => update('governorate', event.target.value)}>
+              <select id="governorate" value={selectedGovernorate} disabled={!villageExplorerService.available} onChange={(event) => update(apiMode ? 'governorateId' : 'governorate', event.target.value)}>
                 <option value="">جميع المحافظات</option>
-                {governorate && !data?.governorates.includes(governorate) && <option value={governorate}>{governorate}</option>}
-                {data?.governorates.map((name) => <option key={name} value={name}>{name}</option>)}
+                {selectedGovernorate && !data?.governorates.some(item => item.id === selectedGovernorate) && <option value={selectedGovernorate}>{apiMode ? 'المحافظة المحددة غير متاحة في القائمة' : selectedGovernorate}</option>}
+                {data?.governorates.map(item => <option key={item.id} value={item.id}>{item.name ?? 'اسم المحافظة غير متاح'}</option>)}
               </select>
               <ChevronDown size={19} aria-hidden="true" />
             </span>
           </label>
-          {(query || governorate) && <button className="button outline" type="button" onClick={() => setParams({})}>مسح الفلاتر</button>}
+          {apiMode && <>
+            <label htmlFor="village-sort">ترتيب حسب
+              <span className="field select-field"><select id="village-sort" value={sortBy} disabled={!villageExplorerService.available} onChange={event => update('sortBy', event.target.value)}>
+                {!villageSortFields.includes(sortBy) && <option value={sortBy}>ترتيب غير صالح</option>}
+                {villageSortFields.map(field => <option key={field} value={field}>{sortLabels[field]}</option>)}
+              </select><ChevronDown size={19} aria-hidden="true" /></span>
+            </label>
+            <label htmlFor="village-sort-direction">اتجاه الترتيب
+              <span className="field select-field"><select id="village-sort-direction" value={sortDir} disabled={!villageExplorerService.available} onChange={event => update('sortDir', event.target.value)}>
+                {!['asc', 'desc'].includes(sortDir) && <option value={sortDir}>اتجاه غير صالح</option>}
+                <option value="asc">تصاعدي</option><option value="desc">تنازلي</option>
+              </select><ChevronDown size={19} aria-hidden="true" /></span>
+            </label>
+          </>}
+          {(query || selectedGovernorate || governorate || (apiMode && (sortBy !== 'id' || sortDir !== 'asc'))) && <button className="button outline" type="button" onClick={() => setParams(clearExplorerQuery(params))}>مسح الفلاتر</button>}
         </form>
         <p className="results" role="status">{data ? `عدد النتائج: ${number.format(data.total)}` : ''}</p>
         {data?.items.length ? (
-          <div className="village-grid">{data.items.map((village) => <VillageCard key={village.id} village={village} />)}</div>
-        ) : <PageState {...state} title="لم نعثر على قرى مطابقة" message={data ? 'جرّب اسمًا آخر أو اختر محافظة مختلفة.' : undefined} />}
+          <div className="village-grid">{data.items.map(village => apiMode ? <ApiVillageCard key={village.id} village={village} returnTo={`${pathname}${search}`} /> : <VillageCard key={village.id} village={village} />)}</div>
+        ) : <PageState {...state} title="لم نعثر على قرى مطابقة" message={state.error ? explorerErrorMessage(state.error) : data ? 'جرّب اسمًا آخر أو اختر محافظة مختلفة.' : undefined} />}
         {data?.totalPages > 1 && (
           <nav className="pagination" aria-label="صفحات النتائج">
             <button className="button outline" disabled={data.page === 1} onClick={() => update('page', data.page - 1)}>السابق</button>
             <span>صفحة {number.format(data.page)} من {number.format(data.totalPages)}</span>
-            <button className="button outline" disabled={data.page === data.totalPages} onClick={() => update('page', data.page + 1)}>التالي</button>
+            <button className="button outline" disabled={data.page >= data.totalPages} onClick={() => update('page', data.page + 1)}>التالي</button>
           </nav>
         )}
       </section>

@@ -1,0 +1,11 @@
+.audit-page, .audit-results { display: grid; gap: .9rem; }
+.audit-record { border-block-start: 1px solid var(--line); padding-block: .8rem; display: grid; gap: .6rem; overflow-wrap: anywhere; }
+.audit-record h3, .audit-snapshot h4 { margin: 0; }
+.audit-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.audit-snapshots { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .8rem; }
+.audit-snapshot { display: grid; gap: .4rem; padding: .6rem; background: #f7f8f2; border-radius: .4rem; min-width: 0; }
+.audit-modes { display: flex !important; flex-wrap: wrap; gap: .4rem 1.2rem; }
+.audit-modes legend { font-weight: 700; margin-block-end: .4rem; }
+.audit-mode { display: inline-flex !important; align-items: center; gap: .4rem; font-weight: 600; }
+.audit-mode input { width: auto; }
+.audit-count { margin: 0; color: #5f6b5d; }

@@ -1,9 +1,11 @@
-﻿import { useCallback } from 'react'
+﻿import { useCallback, useLayoutEffect } from 'react'
 import { BookOpen, Building2, Landmark, MapPin, Trees, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import PageState from '../components/PageState.jsx'
 import { getVillage, hasCoordinates } from '../services/villageService.js'
 import { useVillageData } from '../services/useVillageData.js'
+import { villageDetailsService } from '../services/villageDetailsService.js'
+import ApiVillageDetails from '../components/ApiVillageDetails.jsx'
 
 const sections = [
   { key: 'population', title: 'السكان', icon: Users },
@@ -13,10 +15,17 @@ const sections = [
   { key: 'community', title: 'المرافق والمجتمع', icon: Building2 },
 ]
 
-export default function VillageDetails() {
+function MockVillageDetails() {
   const { id } = useParams()
   const load = useCallback(() => getVillage(id), [id])
   const { data: village, ...state } = useVillageData(load)
+  const pageTitle = state.loading ? 'جارٍ تحميل القرية'
+    : state.error ? 'تعذّر تحميل القرية'
+      : village ? village.name : 'القرية غير موجودة'
+
+  useLayoutEffect(() => {
+    document.title = `${pageTitle} | قريتي`
+  }, [pageTitle])
 
   if (!village) {
     return <div className="shell section"><PageState {...state} title="لم نعثر على هذه القرية">{!state.error && <Link className="button primary" to="/villages">العودة إلى دليل القرى</Link>}</PageState></div>
@@ -47,4 +56,8 @@ export default function VillageDetails() {
       </div>
     </>
   )
+}
+
+export default function VillageDetails() {
+  return villageDetailsService.mode === 'mock' ? <MockVillageDetails /> : <ApiVillageDetails />
 }
