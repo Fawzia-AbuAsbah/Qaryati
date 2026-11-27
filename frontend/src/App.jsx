@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage.jsx'
 import { AuthProvider } from './auth/AuthProvider.jsx'
 import { RequireAuth } from './auth/RequireAuth.jsx'
 import SourcesPage from './pages/SourcesPage.jsx'
+import DataConflictsPage from './pages/DataConflictsPage.jsx'
 import './styles/site.css'
 import './styles/auth.css'
 import './styles/sources.css'
@@ -23,6 +24,7 @@ const pageTitles = [
   ['/map', 'خريطة القرى'],
   ['/login', 'تسجيل الدخول'],
   ['/sources', 'المصادر'],
+  ['/data-conflicts', 'تعارضات البيانات'],
 ]
 
 function Layout() {
@@ -51,6 +53,7 @@ function Layout() {
             <Route path="/map" element={<MapPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/sources" element={<RequireAuth><SourcesPage /></RequireAuth>} />
+            <Route path="/data-conflicts" element={<RequireAuth><DataConflictsPage /></RequireAuth>} />
             <Route path="*" element={<PageState title="الصفحة غير موجودة"><Link className="button primary" to="/">العودة إلى الرئيسية</Link></PageState>} />
           </Routes>
         </Suspense>

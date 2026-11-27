@@ -1,0 +1,31 @@
+.conflicts-page, .conflict-panel, .conflict-list { display: grid; gap: .9rem; }
+.conflict-record { border-block-start: 1px solid var(--line); padding-block: .8rem; display: grid; gap: .5rem; overflow-wrap: anywhere; }
+.conflict-record h3, .conflict-record h4 { margin: 0; }
+.conflict-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.conflict-meta { color: #5f6b5d; font-style: italic; }
+.conflict-status { display: inline-block; padding: .15rem .6rem; border-radius: 1rem; font-weight: 700; font-size: .9rem; }
+.conflict-status-open { background: #fff0e8; color: #783719; }
+.conflict-status-in_review { background: #fdf5d8; color: #6b5414; }
+.conflict-status-resolved { background: #ecefdf; color: #3f5428; }
+.conflict-metadata, .conflict-structure { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem .8rem; margin: 0; }
+.conflict-metadata dt, .conflict-structure dt { font-weight: 700; }
+.conflict-metadata dd, .conflict-structure dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+ol.conflict-structure { display: block; padding-inline-start: 1.2rem; }
+.conflict-values { display: grid; gap: .6rem; padding-inline-start: 1.4rem; margin: 0; }
+.conflict-values > li { padding: .6rem; background: #f7f8f2; border-radius: .4rem; min-width: 0; }
+.conflict-notice { padding: .75rem; background: #ecefdf; border-inline-start: .2rem solid #728653; border-radius: .3rem; }
+.conflict-error { padding: .6rem; color: #783719; background: #fff0e8; border-radius: .3rem; }
+.conflict-filter, .conflict-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.conflict-filter [aria-pressed="true"] { background: var(--deep); color: white; }
+.conflict-form, .conflict-form fieldset { display: grid; gap: .8rem; min-width: 0; }
+.conflict-form fieldset { border: 0; padding: 0; margin: 0; }
+.conflict-form fieldset.conflict-value-editor { border: 1px solid var(--line); border-radius: .45rem; padding: .8rem; }
+.conflict-form legend { font-weight: 700; padding-inline: .3rem; }
+.conflict-entry { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .6rem; align-items: end; }
+.conflict-form label { display: grid; gap: .35rem; font-weight: 650; }
+.conflict-form input, .conflict-form textarea { font: inherit; width: 100%; min-width: 0; padding: .6rem; border: 1px solid #bac6b8; border-radius: .45rem; color: var(--deep); background: white; }
+.conflict-form textarea { resize: vertical; }
+.conflict-form :disabled { cursor: default; opacity: .65; }
+@media (max-width: 480px) {
+  .conflict-metadata, .conflict-structure { grid-template-columns: minmax(0, 1fr); }
+}

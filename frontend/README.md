@@ -208,8 +208,8 @@ was not verified in a browser.
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
 Home, Map, Explorer and Details. Authentication, gated Sources and the protected
-VerificationPanel use the API base independently; conflict and audit pages are not
-integrated.
+VerificationPanel and data-conflict views use the API base independently; audit
+pages are not integrated.
 
 The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
@@ -726,3 +726,60 @@ Manual verification once browser and approved test integration are available:
 5. Check 400/401/403/404 and offline responses, then navigate between villages or
    log out with delayed requests. Old history, saved records and errors must not
    appear in the new village/session. Never bypass the application gates to test.
+
+## Data conflicts (role contract partially blocked)
+
+Reviewed `DataConflictController`, `DataConflictService`, the `DataConflict`
+entity, `CreateDataConflictRequest`, `ResolveDataConflictRequest`,
+`DataConflictResponse`, `DataConflictStatus`, `DataQualityExceptionHandler`,
+`SecurityConfig` and the controller integration tests. No incoming `origin/main`
+changes were present.
+
+| Endpoint | Contract | Backend authorization |
+| --- | --- | --- |
+| GET `/data-conflicts?entityType=VILLAGE&entityId={id}` | `DataConflictResponse[]`, createdAt desc | authenticated |
+| GET `/data-conflicts/status/{status}` | `DataConflictResponse[]`, createdAt desc | EDITOR or ADMIN |
+| POST `/data-conflicts` | `{entityType, entityId, fieldName, conflictingValues}`; 201 | EDITOR or ADMIN |
+| PATCH `/data-conflicts/{id}/review` | no body; OPEN to IN_REVIEW | ADMIN |
+| PATCH `/data-conflicts/{id}/resolve` | `{resolutionNotes}`; IN_REVIEW to RESOLVED | ADMIN |
+
+Only `VILLAGE` is supported; the read compares it exactly. `fieldName` is required
+non-blank text of at most 100 characters (the server trims it).
+`conflictingValues` needs at least two non-empty maps with non-blank keys and
+non-null values; nested JSON values are allowed. Resolution notes are required
+non-blank text with no length limit. Invalid transitions return 409, validation
+400, a missing village or conflict 404, missing roles 403 and a missing session
+401. Resolution sets only the conflict's status, notes, `resolvedBy` and
+`resolvedAt`. It does **not** change village data, and the UI states this.
+
+`conflictService.js` reuses AuthProvider's scoped request, the API client and
+the session checks used by Verification. `conflictAccess.js` reuses the closed
+effective-role contract. Authenticated users can read village conflicts. Status
+lists, creation, review and resolution are blocked without verified roles. With
+the current `/auth/me` contract, the app sends **no** management or mutation
+requests. Tests use isolated role fixtures only.
+
+`conflictListState.js` drives both the reusable `VillageConflictsPanel`, which
+mounts in `ApiVillageDetails` after the Verification panel, and the protected
+`/data-conflicts` page, which uses `RequireAuth` and a `?status=` filter that
+defaults to OPEN. It reuses the latest-read and single-mutation controllers.
+Only the next valid lifecycle action for the latest server-confirmed status is
+offered or sent. One mutation runs at a time, and mutations are never retried.
+A confirmed mutation stays successful when the following GET refresh fails. A
+village change, filter change, unmount, logout or session change cancels work
+and redacts state. Mock slugs are rejected and mock browsing mounts no panel.
+The publication gate stays closed.
+
+Competing values render through `StructuredValue.js` as React text nodes. Null,
+empty values and over-deep nesting have explicit labels, and no HTML injection
+API is used. Server order and nullable metadata are preserved. Form drafts keep
+typed text exactly, and `Object.fromEntries` keeps a `__proto__` key as plain
+data.
+
+Validation: 710 tests passed (60 new conflict tests). `npm run build`,
+`npm run lint` and `git diff --check`, including intent-to-add for untracked
+files, passed. Headless Chrome against `vite preview` confirmed that Home and
+mock Details render with no conflict panel, and that anonymous
+`/data-conflicts` and `/sources` redirect to Login. Authenticated UI, live API
+behaviour and role-dependent views remain unverified: no backend or PostgreSQL
+was started and no records or users were created.

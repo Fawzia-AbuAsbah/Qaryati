@@ -29,7 +29,7 @@ function nullableText(value) {
   if (typeof value !== 'string') throw new TypeError('Expected verification text or null')
   return value
 }
-function reviewedTimestamp(value) {
+export function reviewedTimestamp(value) {
   const text = nullableText(value)
   if (text === null) return null
   // Preserve the actual OffsetDateTime, including fractional seconds and offset.

@@ -22,6 +22,7 @@ export default function Navbar() {
         <div className="auth-controls">
           {auth.status === 'authenticated' ? <>
             <NavLink className="button outline" to="/sources">المصادر</NavLink>
+            <NavLink className="button outline" to="/data-conflicts">تعارضات البيانات</NavLink>
             <span>مرحبًا، <bdi>{auth.user.username}</bdi></span>
             <button className="button outline" type="button" onClick={() => auth.logout()}>تسجيل الخروج</button>
           </> : <NavLink className="button outline" to="/login">تسجيل الدخول</NavLink>}
