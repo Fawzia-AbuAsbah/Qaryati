@@ -1,11 +1,22 @@
-// The verified /auth/me response exposes no effective roles. Keep every role
-// requirement closed, including unexpected claims or properties supplied by callers.
+import { applicationRoles, effectiveRolesContractVerified, validRoles, verifiedProfileRoles } from './authRoles.js'
+
+// requiredRoles is an OR allowlist, matching the backend's explicit hasAnyRole
+// checks. An empty requirement means authentication only, with no default role.
 export function authAccessDecision(session, { requiredRoles = [], now = Date.now() } = {}) {
   if (session.status === 'authenticating') return 'pending'
   if (session.status !== 'authenticated' || !session.user || !(session.expiresAt > now)) return 'login'
-  if (!Array.isArray(requiredRoles) || requiredRoles.length > 0) return 'roles-unavailable'
-  return 'allow'
+  if (!validRoles(requiredRoles)) return 'roles-unavailable'
+  if (requiredRoles.length === 0) return 'allow'
+  if (session.checking) return 'pending'
+  if (session.rolesStale || !effectiveRolesContractVerified || !verifiedProfileRoles(session.user)) return 'roles-unavailable'
+  return requiredRoles.some(role => session.user.roles.includes(role)) ? 'allow' : 'forbidden'
 }
+
+export const memberRoutes = Object.freeze([
+  Object.freeze({ to: '/sources', label: 'المصادر', requiredRoles: applicationRoles }),
+  Object.freeze({ to: '/data-conflicts', label: 'تعارضات البيانات', requiredRoles: Object.freeze(['EDITOR', 'ADMIN']) }),
+  Object.freeze({ to: '/audit-logs', label: 'سجل التدقيق', requiredRoles: Object.freeze(['ADMIN']) }),
+])
 
 export function safeAuthReturnTo(value) {
   if (typeof value !== 'string' || !value.startsWith('/') || /[\\\s]/.test(value) || value.startsWith('//')) return '/'

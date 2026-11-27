@@ -6,6 +6,84 @@ API mode. Mock Map and Details retain their existing renderers; mock Home keeps
 its original featured villages, hero and navigation.
 Starting the frontend does not start the backend or connect to PostgreSQL.
 
+## Phase 5.4: effective roles and RBAC
+
+Baseline: `roaa/frontend-final-integration` at `4e2d137`, containing PRs #36 and
+#37. Rechecked `LoginController`, `JwtAuthenticationConverterConfig`,
+`DatabaseUserDetailsService`, `LoginControllerTest` and
+`docs/integration/FRONTEND_BACKEND_CONTRACTS.md`. `/auth/me` returns
+`{username, roles}` with exact role names VIEWER, EDITOR and ADMIN. The server
+uses current database-backed authorities, removes the ROLE_ prefix, deduplicates
+and sorts recognized roles. JWT claims, usernames and browser storage are never
+permission sources. Backend authorization remains authoritative on every request.
+
+`authService.js` validates the complete roles array, copies it and freezes both
+the array and profile. Multiple roles and `[]` are preserved; no default role is
+assigned. Missing, malformed or unknown role data, including an ADMIN mixed with
+an unknown role, yields `roles: null, rolesVerified: false`. The authenticated
+identity can still use the backend's authentication-only reads, but every
+role-dependent operation fails closed. Invalid usernames still reject the profile.
+
+`authRoles.js` enables only the effective-role capability. The existing
+`effectiveSourceRolesVerified` export aliases it for the Member 3 services.
+The public Village gate remains false and mock browsing remains the default.
+No dependencies, backend files, API paths, proxy, village sections or linking
+wiring are changed by this phase.
+
+| Operation | Explicit permission |
+| --- | --- |
+| Sources and source-link reads | VIEWER, EDITOR or ADMIN |
+| Source create/update and link creation | EDITOR or ADMIN |
+| Verification history and village conflict reads | Any authenticated account, including empty/unverified roles |
+| Verification decision | ADMIN |
+| Conflict creation and status lists | EDITOR or ADMIN |
+| Conflict review/resolve | ADMIN |
+| Audit reads | ADMIN |
+
+Generic guards use an OR allowlist with no implicit inheritance: an ADMIN-only
+profile does not satisfy a VIEWER-only requirement. `memberRoutes` shares explicit
+route policies between App and Navbar. Insufficient roles show a forbidden state;
+unverified roles show an unavailable state; anonymous/expired sessions go to Login.
+Page/service permission checks remain in place and block insufficient requests.
+
+Roles are a snapshot from login or the existing `refreshProfile` operation.
+Navbar's **تحديث الصلاحيات** action explicitly reloads `/auth/me`; there is no
+polling or JWT/token refresh. During the check, role-dependent navigation/actions
+are suspended, while authentication-only reads remain permitted. Successful
+refresh replaces the immutable profile, invalidating old Member 3 services and
+their late responses. Invalid role data replaces previous grants with unverified
+roles. Logout, expiry, cancellation and generation/stale-response protections are
+unchanged. A current-session 401 clears authentication. A 403 or network refresh
+failure retains identity and the previous immutable profile with an explicit
+error, but marks the snapshot `rolesStale: true`. Route/service checks block all
+role-dependent operations until a refresh succeeds; authenticated-only reads
+remain permitted. Navbar explicitly labels this stale state. A cancelled retry
+cannot restore stale grants. `rolesVerified` describes the profile's role-data
+validity, not freshness; `rolesStale` separately tracks failed revalidation and is
+cleared only by successful profile verification or session termination. A backend
+role change can still produce 403 before the user refreshes the UI. No forbidden
+operation is automatically retried. This freshness check was added during the
+final pre-commit review, preserving expiration and generation protections.
+
+Service-level Village Source Linking permissions are enabled, but its UI wiring
+is deliberately deferred. Verification/conflict village panels still require a
+real village identity and the closed Village integration gate. No editorial data
+is introduced into mock/public browsing. Live routing/CORS and real backend
+validation remain outstanding. The module delivery notes below contain historical
+validation totals; Phase 5.4 supersedes their earlier role-contract blockers.
+
+Phase 5.4 tests use simulated Fetch responses only. They exercise all eight role
+combinations, malformed role data, route policies, all Member 3 operations,
+immutable profiles, refresh/revocation, insufficient-request prevention,
+401/403, logout, expiry, session replacement and unchanged mock browsing.
+Interactive browser checks could not run: the browser access host is unavailable
+and the installed Playwright modules fail to load. No backend, database or
+frontend server was started for this phase.
+
+Validation: 789 tests passed (50 added); production build, ESLint and
+`git diff --check` passed. These results do not establish live backend or
+interactive browser compatibility.
+
 ## Commands
 
 Run from `frontend/` after installing the locked dependencies with `npm ci`:
@@ -480,14 +558,11 @@ mock data. Authentication does not attach credentials to village services, chang
 the publication gate or approve live public reads. No requests occur on anonymous
 startup; auth requests begin only through explicit login/session operations.
 
-`RequireAuth` is available for future protected routes, with loading, login
-redirect and safe internal return navigation. No administrative route is added.
-**Effective roles remain blocked:** `/auth/me` still omits them. The JWT has no
-role claims; the server resolves authorities from the database. Profile mappings
-therefore expose `roles: null, rolesVerified: false`, ignore unsupported role
-properties and deny every role-dependent guard requirement. No username or JWT
-decoding is used to infer permissions. Frontend guards control UI only; backend
-authorization remains authoritative.
+`RequireAuth` supports protected routes with loading, login redirect, forbidden
+and unverified-role states, plus safe internal return navigation. Phase 5.4
+consumes effective roles from `/auth/me`; see the current policy above. No username
+or JWT decoding is used to infer permissions. Frontend guards control UI only;
+backend authorization remains authoritative.
 
 The API base is shared with the existing client and is independent of the village
 mode/publication gate. No backend port or proxy has been assumed. Before live
@@ -515,29 +590,28 @@ Manual verification once a browser and confirmed test backend are available:
 5. Check Home, Explorer, Details and Map mock navigation before/after login, and
    verify that API village mode remains blocked with zero village API requests.
 
-## Sources management and village source linking (role contract blocked)
+## Sources management and village source linking
 
 Fetched remote refs on `roaa/frontend-integration` at `93669e7`; there were no
 incoming `origin/main` changes. Reviewed `SourceController`,
 `VillageSourceController`, their services/entities, source DTOs and enum,
 `DataQualityExceptionHandler`, global handlers and the security configuration.
-`/auth/me` still returns only username, without effective roles.
+At that delivery snapshot `/auth/me` returned only username; Phase 5.4 now
+consumes the merged effective-role contract.
 
 **Every Sources read is role-dependent.** Controller and service rules require
 VIEWER/EDITOR/ADMIN for all four GET contracts and EDITOR/ADMIN for mutations.
 There is no Sources endpoint explicitly permitting every authenticated user.
-Consequently, the actual app makes **zero Sources requests**, including catalog
-and link reads. `/sources` uses `RequireAuth`, then shows an explicit unavailable
-state instead of an empty catalog or fabricated records. The authenticated Navbar
-links to this protected route; Login preserves safe `/sources?source=ID` returns.
+`/sources` now requires an explicitly recognized effective role. VIEWER reads;
+EDITOR/ADMIN can create/update. Unverified or insufficient permissions send no
+Sources requests. Navbar uses the same route policy; Login preserves safe
+`/sources?source=ID` returns. Linking UI wiring remains deferred.
 
-`sourceAccess.js` keeps `effectiveSourceRolesVerified` false independently of the
-village publication gate. There is no environment switch or demo role/session.
-Unexpected role properties, usernames and JWT decoding cannot enable access.
-Future enablement requires a reviewed effective-role DTO, corresponding auth
-mapping/guard updates, and explicit source-policy review. Isolated automated tests
-inject verified-role fixtures into factories to exercise the verified endpoint
-contracts; those fixtures never enable the application singleton or create users.
+`sourceAccess.js` shares the enabled effective-role capability independently of
+the closed Village publication gate. There is no environment switch or demo
+role/session. Usernames, JWT claims and unrecognized role data cannot enable
+access. Automated tests use simulated HTTP and explicit closed-contract fixtures;
+they never create users or contact a backend.
 Frontend permissions control UI behavior; backend authorization is authoritative.
 
 `sourcesService.js` uses AuthProvider's scoped request method and the unchanged
@@ -608,10 +682,9 @@ unlinking, search, pagination, Verification Records, Data Conflicts or Audit Log
 feature is added.
 
 Manual checks once browser/routing are available: verify anonymous `/sources`
-redirect and safe login return, keyboard/RTL behavior, authenticated unavailable
-notice with zero Sources requests, logout/navigation cleanup and unchanged public
-mock browsing. Live catalog/forms/link checks require the effective-role contract
-and real-village integrations to be reviewed first; do not bypass the gates.
+redirect, safe login return, role-specific navigation/forms, zero requests for
+insufficient permissions, profile refresh, keyboard/RTL behavior, logout cleanup
+and unchanged mock browsing. Linking UI still needs separately approved wiring.
 
 Validation for this step: all 583 dependency-free tests passed (68 added), along
 with `npm run build`, `npm run lint`, `git diff --check` and whitespace checks of
@@ -626,7 +699,8 @@ These automated checks do not establish interactive browser or live backend cove
 Started from clean `roaa/frontend-integration` at `eaa4ac8`, fetched remote refs,
 and found no incoming `origin/main` changes. Reviewed the verification controller,
 service, request/response DTOs, enum, entity/repository, data-quality exception
-handlers and security configuration. `/auth/me` still exposes only username.
+handlers and security configuration. That historical snapshot had a username-only
+`/auth/me`; effective roles are now integrated in Phase 5.4.
 
 Verified paths, relative to the existing `/api/v1` API base:
 
@@ -658,10 +732,10 @@ it neither changes local village status nor sends a village update request.
 `verificationService.js` uses AuthProvider's existing scoped request/getSnapshot
 architecture and unchanged API client. Authentication-only read permission reuses
 `authAccessDecision`; ADMIN creation reuses the existing verified-role helper and
-its still-closed effective-role contract. Missing roles do not block the verified
-GET contract, but **all actual application POSTs remain blocked**. No environment
-override, inferred JWT claims, synthetic users or administrator sessions are added.
-Tests inject isolated role fixtures only into service factories.
+the enabled effective-role contract. Missing roles do not block the authenticated
+GET contract; decision creation requires verified ADMIN. No environment override,
+inferred JWT claims or synthetic application sessions are added. Tests use
+simulated HTTP and explicit service fixtures.
 
 The reusable Arabic RTL `VerificationPanel` mounts in `ApiVillageDetails` after
 a real village identity loads. It reuses the numeric-identity/integration guard;
@@ -691,8 +765,8 @@ clears confirmed current-session 401 failures and preserves the distinction from
 Transport cancellation cannot undo a server mutation already committed; an
 uncertain write result advises checking history before manually retrying.
 
-Remaining enablement blockers are effective roles for ADMIN creation, confirmed
-backend routing/CORS, and approved real-village API integration. These frontend
+Remaining panel blockers are confirmed backend routing/CORS and approved
+real-village API integration. These frontend
 changes do not alter backend authorization or the public publication gate.
 
 Validation: all 650 dependency-free tests passed, including 67 new verification
@@ -720,14 +794,14 @@ Manual verification once browser and approved test integration are available:
 3. Check Arabic RTL layout, keyboard/focus behavior, labels, loading/empty/error
    states, actual reviewer IDs/timestamps, missing metadata and server ordering.
 4. Use isolated mocked POST responses (or an explicitly approved test setup after
-   roles are exposed) to check ADMIN-only decisions, duplicate clicks and success
+   routing is ready) to check ADMIN-only decisions, duplicate clicks and success
    followed by a failed GET refresh. A history retry must issue only GET; village
    status must remain unchanged.
 5. Check 400/401/403/404 and offline responses, then navigate between villages or
    log out with delayed requests. Old history, saved records and errors must not
    appear in the new village/session. Never bypass the application gates to test.
 
-## Data conflicts (role contract partially blocked)
+## Data conflicts
 
 Reviewed `DataConflictController`, `DataConflictService`, the `DataConflict`
 entity, `CreateDataConflictRequest`, `ResolveDataConflictRequest`,
@@ -753,11 +827,10 @@ non-blank text with no length limit. Invalid transitions return 409, validation
 `resolvedAt`. It does **not** change village data, and the UI states this.
 
 `conflictService.js` reuses AuthProvider's scoped request, the API client and
-the session checks used by Verification. `conflictAccess.js` reuses the closed
-effective-role contract. Authenticated users can read village conflicts. Status
-lists, creation, review and resolution are blocked without verified roles. With
-the current `/auth/me` contract, the app sends **no** management or mutation
-requests. Tests use isolated role fixtures only.
+the session checks used by Verification. `conflictAccess.js` reuses verified
+effective roles: authenticated village reads, EDITOR/ADMIN creation and status
+lists, and ADMIN review/resolve. Insufficient or unverified permissions send no
+role-dependent requests. Tests use simulated HTTP and explicit service fixtures.
 
 `conflictListState.js` drives both the reusable `VillageConflictsPanel`, which
 mounts in `ApiVillageDetails` after the Verification panel, and the protected
@@ -784,12 +857,12 @@ mock Details render with no conflict panel, and that anonymous
 behaviour and role-dependent views remain unverified: no backend or PostgreSQL
 was started and no records or users were created.
 
-## Audit logs (read-only, role contract blocked)
+## Audit logs (read-only)
 
 Reviewed `AuditLogController`, `AuditLogService`, `AuditLogResponse`, the
 `AuditLog` entity, `AuditLogRepository`, `AuditAction`, the `audit_logs` schema,
-`DataQualityExceptionHandler` and the controller integration tests. `/auth/me`
-still returns only `username`. No incoming `origin/main` changes were present.
+`DataQualityExceptionHandler` and the controller integration tests. The original
+delivery had username-only `/auth/me`; Phase 5.4 integrates effective roles.
 
 | Endpoint | Parameters | Response |
 | --- | --- | --- |
@@ -816,9 +889,9 @@ searchable. Entity results cover only that type and ID, and the page says they
 are not a complete village history.
 
 `auditService.js` reuses AuthProvider's scoped request, the API client and the
-session checks. `auditAccess.js` requires a verified ADMIN through the existing,
-still-closed effective-role contract, so the actual app sends **zero** audit
-requests. The protected `/audit-logs` page uses `RequireAuth`. It keeps exactly
+session checks. `auditAccess.js` requires a verified ADMIN through the enabled
+effective-role contract. Other accounts send zero audit requests. The protected
+`/audit-logs` page uses an ADMIN route guard. It keeps exactly
 one query mode in the URL (`mode=entity|actor|action`) and validates it before
 any request. Invalid URL filters send nothing. `auditLogState.js` holds one
 read-only store per canonical query. A filter change, leaving the page, logout

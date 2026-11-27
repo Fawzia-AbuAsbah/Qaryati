@@ -1,7 +1,7 @@
 import { authAccessDecision } from './authAccess.js'
 import { effectiveSourceRolesVerified, sourcePermissions } from './sourceAccess.js'
 
-// The same unverified /auth/me role contract governs every protected mutation.
+// Effective /auth/me roles govern creation; only ADMIN may record a decision.
 // Verification history alone explicitly permits all authenticated users.
 export function verificationPermissions(session, { rolesContractVerified = effectiveSourceRolesVerified, now = Date.now() } = {}) {
   if (authAccessDecision(session, { now }) !== 'allow') return { read: false, create: false, reason: 'AUTH_REQUIRED' }

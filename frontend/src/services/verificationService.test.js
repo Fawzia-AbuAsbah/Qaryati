@@ -41,7 +41,7 @@ test('POST uses only CreateVerificationRequest fields and the server-provided re
   }
 })
 
-test('production creation is blocked even with injected ADMIN claims; isolated EDITOR/VIEWER fixtures cannot create', async () => {
+test('unverified creation stays blocked; verified EDITOR/VIEWER/empty roles cannot create', async () => {
   const production = fixture(() => assert.fail('No POST allowed'))
   await assert.rejects(production.service.create('42', 'VERIFIED', null), { code: 'VERIFICATION_ROLES_UNAVAILABLE' })
   for (const roles of [['EDITOR'], ['VIEWER'], []]) {
@@ -51,7 +51,7 @@ test('production creation is blocked even with injected ADMIN claims; isolated E
   }
   const getSession = () => ({ status: 'authenticated', user: { username: 'admin', roles: ['ADMIN'], rolesVerified: true }, expiresAt: Date.now() + 10000 })
   const snapshot = getSession()
-  const service = createVerificationService({ request: () => assert.fail('No production override'), getSession: () => snapshot })
+  const service = createVerificationService({ request: () => assert.fail('No unverified override'), getSession: () => snapshot, rolesContractVerified: false })
   await assert.rejects(service.create('42', 'VERIFIED', null), { code: 'VERIFICATION_ROLES_UNAVAILABLE' })
 })
 
@@ -128,12 +128,12 @@ test('old services reject responses and further requests after logout, expiry or
   }
 })
 
-test('real auth profile with no roles permits verification history while Sources and verification mutations stay closed', async t => {
+test('malformed /me roles preserve authenticated history but close Sources and verification creation', async t => {
   const calls = []
   const client = createApiClient({ fetchImpl: (url, init) => {
     calls.push({ url, init })
     if (url.endsWith('/auth/login')) return response({ accessToken: 'memory-token', tokenType: 'Bearer', expiresIn: 900 })
-    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN'] })
+    if (url.endsWith('/auth/me')) return response({ username: 'server-profile', roles: ['ADMIN', 'UNKNOWN'] })
     assert.equal(url, '/api/v1/verifications?entityType=VILLAGE&entityId=42')
     assert.equal(init.headers.get('Authorization'), 'Bearer memory-token')
     return response([dto])

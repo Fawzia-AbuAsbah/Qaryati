@@ -1,14 +1,14 @@
 import { authAccessDecision } from './authAccess.js'
 import { SourceError } from './sourceContracts.js'
 import { toBackendId } from './villageAdapters.js'
+import { effectiveRolesContractVerified, verifiedProfileRoles } from './authRoles.js'
 
-// /auth/me exposes username only. No environment flag can approve role claims.
-export const effectiveSourceRolesVerified = false
+// All Member 3 modules share the verified effective-role capability.
+export const effectiveSourceRolesVerified = effectiveRolesContractVerified
 
 export function sourcePermissions(session, { rolesContractVerified = effectiveSourceRolesVerified, now = Date.now() } = {}) {
   if (authAccessDecision(session, { now }) !== 'allow') return { read: false, write: false, reason: 'AUTH_REQUIRED' }
-  if (rolesContractVerified !== true || session.user.rolesVerified !== true || !Array.isArray(session.user.roles)
-    || session.user.roles.some(role => !['VIEWER', 'EDITOR', 'ADMIN'].includes(role))) {
+  if (rolesContractVerified !== true || session.checking || session.rolesStale || !verifiedProfileRoles(session.user)) {
     return { read: false, write: false, reason: 'SOURCE_ROLES_UNAVAILABLE' }
   }
   const write = session.user.roles.some(role => ['EDITOR', 'ADMIN'].includes(role))

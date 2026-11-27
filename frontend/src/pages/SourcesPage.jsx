@@ -8,6 +8,7 @@ import SourceForm from '../components/sources/SourceForm.jsx'
 import SourceDetails from '../components/sources/SourceDetails.jsx'
 import SourceVillages from '../components/sources/SourceVillages.jsx'
 import VillageSourcesPanel from '../components/sources/VillageSourcesPanel.jsx'
+import { sourceErrorMessage } from '../services/sourceContracts.js'
 
 export default function SourcesPage() {
   const service = useSourcesService()
@@ -16,8 +17,8 @@ export default function SourcesPage() {
     <div className="page-banner"><div className="shell"><h1>المصادر</h1><p>فهرس المراجع وبياناتها وروابطها بالقرى.</p></div></div>
     <section className="shell section sources-page" aria-label="إدارة المصادر">
       {!permissions?.read ? <div className="detail-panel" role="status"><h2>إدارة المصادر غير متاحة حاليًا</h2>
-        <p>تتطلب قراءة المصادر صلاحيات عارض أو محرر أو مدير. لا تتيح الخدمة حاليًا التحقق من صلاحيات الحساب، لذلك لم تُرسل أي طلبات مصادر.</p>
-        <p>الإنشاء والتعديل وربط القرى غير متاحة حتى يمكن التحقق من الصلاحيات المطلوبة.</p>
+        <p>{sourceErrorMessage({ code: permissions?.reason ?? 'AUTH_REQUIRED' })}</p>
+        <p>قراءة المصادر تتطلب صلاحيات عارض أو محرر أو مدير؛ الإنشاء والتعديل والربط تتطلب محررًا أو مديرًا.</p>
       </div> : <SourcesWorkspace service={service} />}
     </section>
   </>

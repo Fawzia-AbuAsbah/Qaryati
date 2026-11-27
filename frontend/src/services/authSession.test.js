@@ -33,7 +33,7 @@ function fixture(t, handler) {
   const time = clock(), calls = []
   const fetchImpl = async (url, init) => {
     calls.push({ url, init })
-    return handler ? handler(url, init, calls.length) : response(url.endsWith('/login') ? loginDto : { username: 'verified-name' })
+    return handler ? handler(url, init, calls.length) : response(url.endsWith('/login') ? loginDto : { username: 'verified-name', roles: [] })
   }
   const store = createAuthSession({ service: createAuthService({ request: createApiClient({ fetchImpl }) }), ...time })
   t.after(() => store.dispose())
@@ -48,7 +48,7 @@ test('anonymous startup makes no requests; a session requires the verified profi
   assert.equal(calls.length, 0)
   assert.equal(time.timers.size, 0)
   const user = await store.login(credentials)
-  assert.deepEqual(user, { username: 'verified-name', roles: null, rolesVerified: false })
+  assert.deepEqual(user, { username: 'verified-name', roles: [], rolesVerified: true })
   assert.equal(store.getSnapshot().status, 'authenticated')
   assert.equal(store.getSnapshot().expiresAt, 130000)
   assert.equal(time.timers.size, 1)
