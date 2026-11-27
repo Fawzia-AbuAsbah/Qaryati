@@ -7,6 +7,34 @@ Mock Map and Details retain their existing renderers; mock Home keeps
 its original featured villages, hero and navigation.
 Starting the frontend does not start the backend or connect to PostgreSQL.
 
+## Phase 5.8: Vite API proxy
+
+Baseline: `b5641d1` on `roaa/frontend-final-integration`, initially clean with
+988 passing tests. Fetching remote refs found no incoming `origin/main` changes;
+it remains `4e2d137`. The checked-out application has no `server.port` override,
+the Dockerfile exposes 8080, and the root README identifies 8080 as the usual
+native port. Compose explicitly maps `127.0.0.1:8081` to container port 8080.
+Public controllers and the API client retain the `/api/v1` prefix. No backend,
+Compose, database, CORS or security configuration was changed or executed.
+
+Development and preview now share the proxy described under API configuration
+below. Transport tests use temporary loopback HTTP fixtures on dynamic ports;
+they never contact the real backend on 8080 or 8081. They exercise both actual
+Vite server variants, public/authenticated requests, JSON POST/PUT/PATCH,
+Arabic/reserved query values, exact paths, headers, statuses, Retry-After and
+unavailable upstreams. These fixtures test HTTP forwarding, not backend business
+rules, browser CORS, login with real accounts or real database behavior.
+
+Validation: 1,043 tests pass, including 55 new proxy/configuration checks. Build,
+lint and whitespace checks pass. Both Vite fixture servers and their synthetic
+upstreams stop after testing. Cleanup attempts every resource even if a preceding
+cleanup step fails; a synthetic failure regression checks actual server closure
+and preview-file removal. No requests are sent to real backend ports, and
+no backend or PostgreSQL is started. Secure interactive browser checks remain
+unavailable from the preceding phase and were not repeated with security
+overrides. Real backend integration, browser/CORS behavior and production reverse
+proxy deployment still require separate validation.
+
 ## Phase 5.7: Public Home and Map integration
 
 Baseline: `59fcf8c` on `roaa/frontend-final-integration`, initially clean with
@@ -253,36 +281,97 @@ npm run dev
 npm test
 npm run build
 npm run lint
+npm run preview
 ```
 
-Tests use Node's built-in test runner, assertions, pure DTO fixtures and mocked Fetch responses.
-Use the existing Node.js 24 runtime; no test dependency or live API is needed.
+Tests use Node's built-in runner, DTO fixtures, simulated Fetch responses and
+temporary loopback HTTP/Vite servers. Use the existing Node.js 24 runtime; no
+test dependency or live backend is needed. Proxy fixtures use dynamically assigned
+ports, close all servers/connections and remove their temporary preview directory.
 
 ## API base configuration and routing
 
-`src/services/apiClient.js` reads `import.meta.env.VITE_API_BASE_URL`. The default
-is `/api/v1`. Copy `.env.example` to the Git-ignored `.env.local` to override it,
-then restart Vite. Production changes require rebuilding because Vite environment
-values are embedded at build time. All `VITE_*` configuration is public; put no
-tokens, passwords, signing keys or database credentials in it.
+`src/services/apiClient.js` reads `import.meta.env.VITE_API_BASE_URL`, defaulting
+to `/api/v1`. Mock browsing remains the default; switching on the proxy does not
+switch the data mode or enable catalogue/rich-section capabilities. Authentication
+and protected Member 3 modules use the configured API base independently of the
+browsing mode, retaining their session/RBAC checks. API errors never select mock
+data as a fallback.
 
-The base includes the version prefix. Supply endpoint paths such as `/villages`,
-not `/api/v1/villages`. A base can be an origin-relative path or an absolute
+The base includes the version prefix. Supply paths such as `/public/villages`,
+not `/api/v1/public/villages`. A base can be an origin-relative path or an absolute
 HTTP(S) URL, with optional trailing slash. Base queries, fragments and embedded
 credentials are rejected. Endpoints cannot override or traverse outside the base.
 
-- **Development:** Vite currently has no API proxy. `/api/v1` would reach Vite's
-  own origin until a proxy is configured against the team's confirmed backend
-  address. Alternatively, an explicitly configured absolute API base requires
-  backend CORS support for the frontend origin. Neither the backend address nor
-  CORS/public-read changes are assumed or configured in this step. Mock village
-  browsing makes no API requests; explicit login uses the configured API base
-  independently of the village mode.
-- **Production:** the intended default is same-origin routing: the web server
-  sends `/api/v1/*` to the backend and serves the frontend at other application
-  paths. API paths must be excluded from the SPA HTML fallback. A separately
-  hosted API needs an explicit build-time base URL and team-approved CORS rules.
-  Deployment routing remains infrastructure work.
+Both `server.proxy` and `preview.proxy` forward `/api/v1` and its descendants,
+including query parameters, to `DEV_API_PROXY_TARGET`. The default target is
+`http://127.0.0.1:8080`; the confirmed Docker alternative is
+`http://127.0.0.1:8081`. Do not append `/api/v1` to the target. Targets must be
+absolute HTTP(S) origins, with no credentials, base path, query or fragment;
+invalid values stop Vite with a configuration error that omits the supplied value.
+
+`vite.config.js` uses `loadEnv(mode, frontendDirectory, 'DEV_')`; Vite's client
+environment prefix remains `VITE_`. `DEV_API_PROXY_TARGET` is server-side only
+and is not exposed through `import.meta.env` or bundled into client JavaScript.
+Both servers bind to `127.0.0.1`. `changeOrigin: true` changes the upstream Host
+header; API paths are not rewritten. Methods, JSON bodies, Authorization supplied
+by the client, response status/content headers and Retry-After are forwarded.
+The proxy injects no authentication and does not retry requests. Public clients
+continue to omit Bearer tokens and cookies. HTTPS targets retain certificate
+verification. Default proxy connection-error logs omit request queries, headers,
+bodies and upstream error stacks; no request-body logger is added.
+
+For the unchanged mock default, run `npm run dev` from `frontend/`. The normal
+development URL is `http://127.0.0.1:5173` (use the URL printed by Vite if occupied).
+To explicitly use the public APIs with a native backend, set these variables in
+the same PowerShell session before starting Vite:
+
+```powershell
+$env:VITE_API_BASE_URL = '/api/v1'
+$env:VITE_VILLAGE_EXPLORER_MODE = 'api'
+$env:DEV_API_PROXY_TARGET = 'http://127.0.0.1:8080'
+npm run dev
+```
+
+For the checked-out Docker Compose backend, use the same API settings with:
+
+```powershell
+$env:DEV_API_PROXY_TARGET = 'http://127.0.0.1:8081'
+npm run dev
+```
+
+To preview an API-mode build, keep the desired settings above and run:
+
+```powershell
+npm run build
+npm run preview
+```
+
+Preview normally serves `http://127.0.0.1:4173`. `VITE_*` settings are embedded
+at build time: changing the browsing mode or API base for preview requires a new
+build. Changing only `DEV_API_PROXY_TARGET` requires restarting dev/preview,
+without rebuilding the client. Vite loads frontend `.env`/`.env.local` and
+mode-specific variants as usual, with shell values taking precedence; development
+and preview default to development and production modes respectively. The supplied
+`.env.example` documents non-secret configuration only. No real environment files or
+credentials are created by this phase. Never put credentials or tokens in `VITE_*`
+values; all `VITE_*` values are public. An absolute API base bypasses the local proxy.
+
+A missing/refused upstream returns HTTP 502 rather than SPA HTML or mock villages.
+Check the target's host/port and backend availability, then retry deliberately.
+401/403 responses remain backend authentication/permission failures; 429 retains
+Retry-After. An HTML response usually indicates a wrong base URL or API routing
+through an SPA fallback. Invalid target origins fail at startup. Do not enable
+detailed request/debug logging with sensitive request data. No TLS verification
+or browser security override is needed or configured.
+
+Vite development/preview proxying is **not a production reverse proxy**. Deploying
+`dist/` does not deploy these server rules. Production needs a same-origin reverse
+proxy that routes `/api/v1` to the backend before the SPA fallback, preserving API
+methods/statuses/headers. Alternatively, build with an explicit absolute API base
+and configure backend CORS for the exact frontend origins, methods and headers
+(including Authorization and Content-Type). Backend authorization remains required
+in both arrangements. Production routing and backend CORS remain separate work.
 
 ## Client interface
 
