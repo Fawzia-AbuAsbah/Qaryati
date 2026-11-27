@@ -1,8 +1,9 @@
 # Qaryati frontend
 
 The React/Vite app defaults to the existing mock data through
-`src/services/villageService.js`. Village Explorer now has a gated API service;
-Home, Village Details and Map continue to use the unchanged mock service.
+`src/services/villageService.js`. Explorer and Details have gated API services;
+Home and Map continue to use the unchanged mock service. Details retains its
+original mock renderer when mock mode is selected.
 Starting the frontend does not start the backend or connect to PostgreSQL.
 
 ## Commands
@@ -202,13 +203,13 @@ was not verified in a browser.
 
 ## Village Explorer API integration (gated)
 
-`VITE_VILLAGE_EXPLORER_MODE=mock` is the default. `api` selects the API path;
+`VITE_VILLAGE_EXPLORER_MODE=mock` is the shared Explorer/Details default. `api` selects the API path;
 unknown mode values show an explicit configuration error. Neither errors nor
 blocked API mode silently select mock data. This setting applies only to
-Explorer; Home, Details, Map, authentication and data-quality pages are not
+Explorer and Details; Home, Map, authentication and data-quality pages are not
 integrated with the API.
 
-The source-level `publicContractsVerified` gate in `villageExplorerService.js`
+The shared source-level `publicVillageContractsVerified` gate in `villageMode.js`
 remains **false**. Setting the mode to `api` alone shows an unavailable state
 and makes **no requests**, including governorate requests. No environment flag
 can approve publication security. Tests inject `publicationVerified: true`
@@ -223,6 +224,8 @@ Reviewed backend evidence still blocks public enablement:
 - `VillageService.activeSpecification` always excludes archived rows, but does
   not enforce a public publication-status restriction. All village statuses are
   readable by existing read roles.
+- Village identity reads use `getById` without an archive/publication restriction;
+  a public Details policy is also required before enablement.
 - `GovernorateController` returns `List<GovernorateResponse>` and is covered by
   the authenticated request rule.
 
@@ -256,8 +259,8 @@ Two corrective reads are allowed for concurrent dataset shrinkage; continued
 changes produce a retryable error. A failed correction never displays data under
 a falsely clamped page number. Network/HTTP errors have no automatic retries.
 
-`useExplorerData` uses a separate abort/stale-response controller; the hook used
-by other pages is unchanged. Navigation and unmount abort the entire catalog/list
+`useExplorerData` uses an abort/stale-response controller also reused by API Details;
+the mock hook is unchanged. Navigation and unmount abort the entire catalog/list
 operation, including corrections. Old success/error responses are ignored even
 if a transport ignores cancellation. URL correction is guarded against newer
 navigation and reuses only the matching, already-fetched response. Loading,
@@ -265,10 +268,86 @@ empty, unavailable, 401, 403, rate-limit and network errors have Arabic states;
 there is no token handling, login redirect or authentication implementation.
 
 API cards preserve the existing RTL layout and colors, show explicit missing
-name/governorate/image labels, and do not link numeric IDs into the unintegrated
-mock Details/Map routes. Interactive browser verification was attempted again
+name/governorate/image labels. Numeric Details links require available, matching
+Explorer and Details integrations; API villages never link to mock Map routes.
+Interactive browser verification was attempted again
 for this integration and remained unavailable because the native computer-use
 pipe could not connect. Mocked HTTP tests do not establish interactive UI coverage.
 Live backend verification also remains unavailable: no backend was started and
 no live API requests were made. Public-read authorization and publication rules
 remain unconfirmed, so the application API gate stays closed.
+
+## Village Details API integration (gated)
+
+Details reuses the existing mode variable and the same closed release gate as
+Explorer. The gate was moved into `villageMode.js`, remains **false**, and covers
+identity, governorates and all four heritage collections. Public-read and
+server-side publication rules for every integrated endpoint must be reviewed
+before any future enablement. Existing authenticated VIEWER filtering of heritage
+records is not proof of a public-read contract. No frontend status filtering is
+used as an authorization or publication boundary.
+
+`villageDetailsService.js` calls only the following GET contracts through the
+existing API client (paths are relative to the configured `/api/v1` base):
+
+| Path | Purpose / parameters |
+| --- | --- |
+| `/villages/{id}` | Numeric identity and geography; no query parameters |
+| `/governorates` | Independent catalog and numeric-ID-to-Arabic-name mapping |
+| `/village-historical-overviews` | `villageId`, zero-based `page`, `size` |
+| `/historical-events` | `villageId`, zero-based `page`, `size` |
+| `/cultural-heritage` | `villageId`, zero-based `page`, `size` |
+| `/heritage-sites` | `villageId`, zero-based `page`, `size` |
+
+Route IDs must be canonical positive safe-integer decimal strings in API mode.
+Invalid/sluggified IDs make no HTTP requests; the mock branch keeps its existing
+slug behavior. A 404 from the identity endpoint returns a missing village and
+does not trigger child requests. A 404 from a section remains a section error.
+Mismatched identity IDs, malformed DTOs and wrong-village collection rows fail
+explicitly; records are never selectively hidden to mask a broken contract.
+
+`heritageAdapters.js` follows `VillageHistoricalOverviewResponse`,
+`HistoricalEventResponse`, `CulturalHeritageCrudResponse`, `HeritageSiteResponse`
+and their enum definitions. It preserves descriptions, historical LocalDate
+strings (including signed historical years), year ranges, date precision,
+Instant strings, source IDs and each record's verification status. There is no
+timezone conversion or fabricated January/day value for year/period records.
+Missing values remain null, and absent source information stays distinct from
+an explicit empty source list. Coordinates use the existing finite/range checks;
+null coordinates never become zero. DTO text is rendered as React text, not HTML.
+
+Identity loads first. Governorate names and all four collections then use
+independent instances of the existing cancellation/stale-response hook. A catalog
+or section failure leaves the identity and successful sections usable, shows an
+error instead of an empty state, and can be retried independently. Sections have
+separate one-based UI pagination (default size 5) and request only the selected
+village's page. Out-of-range pages fetch the last valid page, with at most two
+corrective reads; failed corrections remain errors. No entire collections are
+downloaded for local filtering. Navigation resets section pages, aborts old
+requests, ignores late completions, and updates the document title for loading,
+selected village, missing-name, not-found and failure states.
+
+API Explorer cards link to numeric Details routes only when both services are
+available in the same mode. Their return link retains the Explorer pathname and
+query parameters through router state; other return destinations are rejected.
+API Details displays coordinate availability without links into the unintegrated
+mock Map. Mock Details keeps its original page structure, demo text, titles,
+section values and Map links. Home and Map are unchanged and remain mock-only.
+
+Population, agriculture and community are explicitly unavailable in API Details:
+
+- `PopulationRecordController.getAll(page, size)` still has no `villageId`
+  parameter. No unfiltered population collection is downloaded.
+- Agriculture's village lookup and community's village filters exist, but their
+  read services have no approved server-side publication policy. Their endpoints
+  are not called and their domain adapters are not invented here.
+- The latest fetch had no incoming backend changes. Global authentication and
+  unconfirmed village/publication policy still prevent live public enablement.
+
+Automated tests use mocked HTTP and dependency-free Node assertions, covering
+domain/null mappings, request paths, filters, pagination, independent failures,
+closed gates, cancellation/stale responses, titles, mock regressions and navigation
+helpers. Interactive browser verification was attempted for Details but the native
+computer-use pipe was unavailable. Interactive UI behavior remains unverified.
+HTTP application-shell checks are not browser verification. No backend was started,
+no live backend requests were made and live backend verification remains unavailable.

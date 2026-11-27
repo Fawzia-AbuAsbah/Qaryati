@@ -1,23 +1,26 @@
 ﻿import { useCallback, useEffect, useRef } from 'react'
 import { ChevronDown, MapPin, Search } from 'lucide-react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import PageState from '../components/PageState.jsx'
 import VillageCard from '../components/VillageCard.jsx'
 import { villageExplorerService, explorerErrorMessage, villageSortFields } from '../services/villageExplorerService.js'
 import { clearExplorerQuery, readExplorerQuery, updateExplorerQuery } from '../services/explorerQuery.js'
 import { useExplorerData } from '../services/useExplorerData.js'
+import { villageDetailsService } from '../services/villageDetailsService.js'
+import { villageDetailsHref } from '../services/villageDetailsState.js'
 
 const number = new Intl.NumberFormat('ar')
 const sortLabels = { id: 'المعرّف', nameAr: 'الاسم العربي', nameEn: 'الاسم الإنجليزي', createdAt: 'تاريخ الإضافة', updatedAt: 'آخر تحديث' }
 
-function ApiVillageCard({ village }) {
+function ApiVillageCard({ village, returnTo }) {
+  const detailsHref = villageDetailsHref(village.id, villageExplorerService, villageDetailsService)
   return (
     <article className="village-card">
       <div className="card-scene missing-scene"><MapPin aria-hidden="true" /><p>صورة القرية غير متاحة</p></div>
       <div className="card-body">
         <p className="location"><MapPin size={16} aria-hidden="true" />{village.governorate ? `محافظة ${village.governorate}` : 'المحافظة غير متاحة'}</p>
         <h3>{village.name ?? 'اسم القرية غير متاح'}</h3>
-        <p>تفاصيل القرية غير متاحة حاليًا.</p>
+        {detailsHref ? <Link className="card-link" to={detailsHref} state={{ explorerReturnTo: returnTo }}>تفاصيل القرية</Link> : <p>تفاصيل القرية غير متاحة حاليًا.</p>}
       </div>
     </article>
   )
@@ -93,7 +96,7 @@ export default function VillageExplorer() {
         </form>
         <p className="results" role="status">{data ? `عدد النتائج: ${number.format(data.total)}` : ''}</p>
         {data?.items.length ? (
-          <div className="village-grid">{data.items.map(village => apiMode ? <ApiVillageCard key={village.id} village={village} /> : <VillageCard key={village.id} village={village} />)}</div>
+          <div className="village-grid">{data.items.map(village => apiMode ? <ApiVillageCard key={village.id} village={village} returnTo={`${pathname}${search}`} /> : <VillageCard key={village.id} village={village} />)}</div>
         ) : <PageState {...state} title="لم نعثر على قرى مطابقة" message={state.error ? explorerErrorMessage(state.error) : data ? 'جرّب اسمًا آخر أو اختر محافظة مختلفة.' : undefined} />}
         {data?.totalPages > 1 && (
           <nav className="pagination" aria-label="صفحات النتائج">

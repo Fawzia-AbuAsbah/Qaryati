@@ -2,10 +2,8 @@ import { apiClient } from './apiClient.js'
 import { adaptGovernorateCatalog, toBackendId } from './villageAdapters.js'
 import { adaptVillagePage, toBackendPage } from './paginationAdapters.js'
 import { listVillages as listMockVillages } from './villageService.js'
+import { createVillageAccess, publicVillageContractsVerified, villageDataMode } from './villageMode.js'
 
-// Release gate: the reviewed backend still requires authentication and lists all
-// active statuses. An environment variable cannot confirm publication security.
-const publicContractsVerified = false
 export const villageSortFields = Object.freeze(['id', 'nameAr', 'nameEn', 'createdAt', 'updatedAt'])
 
 export class ExplorerError extends Error {
@@ -34,16 +32,13 @@ function listingQuery({ query = '', governorate = '', governorateId = '', page =
 }
 
 export function createVillageExplorerService({
-  mode = 'mock', publicationVerified = publicContractsVerified,
+  mode = 'mock', publicationVerified = publicVillageContractsVerified,
   request = apiClient, mockList = listMockVillages,
 } = {}) {
-  function requireApi() {
-    if (mode !== 'api') throw new ExplorerError('INVALID_MODE')
-    if (publicationVerified !== true) throw new ExplorerError('PUBLIC_CONTRACTS_UNCONFIRMED')
-  }
+  const access = createVillageAccess({ mode, publicationVerified })
 
   async function listGovernorates({ signal } = {}) {
-    requireApi()
+    access.requireApi()
     signal?.throwIfAborted()
     const payload = await request('/governorates', { signal })
     signal?.throwIfAborted()
@@ -58,7 +53,7 @@ export function createVillageExplorerService({
       signal?.throwIfAborted()
       return { ...result, governorates: result.governorates.map(name => ({ id: name, name })) }
     }
-    requireApi()
+    access.requireApi()
     const query = listingQuery(options)
     const catalog = await listGovernorates({ signal })
     let backendPage = query.page
@@ -78,7 +73,7 @@ export function createVillageExplorerService({
     }
   }
 
-  return { mode, available: mode === 'mock' || (mode === 'api' && publicationVerified === true), listGovernorates, listVillages }
+  return { mode, available: access.available, listGovernorates, listVillages }
 }
 
 export function explorerErrorMessage(error) {
@@ -94,5 +89,5 @@ export function explorerErrorMessage(error) {
 }
 
 export const villageExplorerService = createVillageExplorerService({
-  mode: import.meta.env?.VITE_VILLAGE_EXPLORER_MODE?.trim() || 'mock',
+  mode: villageDataMode,
 })

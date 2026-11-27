@@ -1,0 +1,23 @@
+// Shared release gate. Environment configuration cannot approve publication rules.
+// Covers Explorer, village identity, governorates and the four heritage collections.
+export const publicVillageContractsVerified = false
+export const villageDataMode = import.meta.env?.VITE_VILLAGE_EXPLORER_MODE?.trim() || 'mock'
+
+export class VillageAccessError extends Error {
+  constructor(code) {
+    super(code)
+    this.name = 'VillageAccessError'
+    this.code = code
+  }
+}
+
+export function createVillageAccess({ mode = 'mock', publicationVerified = publicVillageContractsVerified } = {}) {
+  return {
+    mode,
+    available: mode === 'mock' || (mode === 'api' && publicationVerified === true),
+    requireApi() {
+      if (mode !== 'api') throw new VillageAccessError('INVALID_MODE')
+      if (publicationVerified !== true) throw new VillageAccessError('PUBLIC_CONTRACTS_UNCONFIRMED')
+    },
+  }
+}

@@ -4,6 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import PageState from '../components/PageState.jsx'
 import { getVillage, hasCoordinates } from '../services/villageService.js'
 import { useVillageData } from '../services/useVillageData.js'
+import { villageDetailsService } from '../services/villageDetailsService.js'
+import ApiVillageDetails from '../components/ApiVillageDetails.jsx'
 
 const sections = [
   { key: 'population', title: 'السكان', icon: Users },
@@ -13,7 +15,7 @@ const sections = [
   { key: 'community', title: 'المرافق والمجتمع', icon: Building2 },
 ]
 
-export default function VillageDetails() {
+function MockVillageDetails() {
   const { id } = useParams()
   const load = useCallback(() => getVillage(id), [id])
   const { data: village, ...state } = useVillageData(load)
@@ -54,4 +56,8 @@ export default function VillageDetails() {
       </div>
     </>
   )
+}
+
+export default function VillageDetails() {
+  return villageDetailsService.mode === 'mock' ? <MockVillageDetails /> : <ApiVillageDetails />
 }
