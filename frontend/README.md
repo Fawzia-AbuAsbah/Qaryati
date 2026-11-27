@@ -16,7 +16,7 @@ npm run build
 npm run lint
 ```
 
-Tests use Node's built-in test runner, assertions and mocked Fetch responses.
+Tests use Node's built-in test runner, assertions, pure DTO fixtures and mocked Fetch responses.
 Use the existing Node.js 24 runtime; no test dependency or live API is needed.
 
 ## API base configuration and routing
@@ -117,3 +117,85 @@ backend's eventual CORS policy exposes them.
 Public read access, publication filtering, `/auth/me` roles, authentication UI,
 live village adapters, and the missing backend contracts remain separate team
 work. This foundation does not make protected or unverified data public.
+
+## Pure data adapters
+
+`src/services/villageAdapters.js` and `src/services/paginationAdapters.js` have
+no network, storage or React dependencies. They are not imported by existing
+pages or `villageService.js`; mock mode and its slug routes remain unchanged.
+
+The source contracts are the backend's `VillageResponse`, `GovernorateResponse`
+and `VillagePageResponse` in `com.qaryati.village.dto`, plus the common envelope
+of `PopulationRecordPage` and the heritage `*Page` records. These adapters do not
+accept request DTOs or validate unresolved domain-specific response contracts.
+
+```js
+import { adaptGovernorateCatalog, adaptVillage, toBackendId } from './services/villageAdapters.js'
+import { adaptVillagePage, adaptRecordPage, toBackendPage } from './services/paginationAdapters.js'
+
+// Inputs below are already-decoded DTOs; adapters never fetch them.
+const catalog = adaptGovernorateCatalog(governorateDtos)
+const village = adaptVillage(villageDto, catalog.namesById)
+const villages = adaptVillagePage(villagePageDto, catalog.namesById)
+const records = adaptRecordPage(populationOrHeritagePageDto)
+const backendId = toBackendId(village.id)
+const backendPage = toBackendPage(villages.page)
+```
+
+Mapping rules:
+
+| Backend/input | Adapter output |
+| --- | --- |
+| Positive safe-integer `id` | Canonical decimal string `id` for routes, plus numeric `backendId` |
+| `nameAr` | `name` and `nameAr`; `nameEn` retained separately, without an invented Arabic fallback |
+| Governorate catalog array | `{items, namesById}`; all catalog rows in supplied order, with numeric Map keys |
+| `governorateId` | Retained numeric ID and catalog-derived Arabic `governorate`; unknown/absent name stays null |
+| `localAuthorityId` | Retained numeric ID or null; no inferred authority name |
+| `latitude`, `longitude` | Retained separately; `coordinates` is `[latitude, longitude]` only when both are present and valid |
+| `nameOrigin`, `locationDescription`, `elevationM`, `areaKm2` | Retained under their DTO names; location description is not a historical overview |
+| `status` | Exact nullable `VillageStatus`; no inferred public/verified flag or filtering |
+| Mock-only content fields | `featured`, `contentStatus`, `overview`, `population`, `history`, `heritage`, `agriculture`, `community` are null |
+
+Optional missing/null fields stay null; blank text is treated as missing. Invalid
+types fail with TypeError instead of coercion. Numeric strings are not accepted
+as DTO IDs or coordinates. `toRouteId`/`toBackendId` only round-trip positive safe
+integers and canonical decimal strings; mock slugs, leading zeros, fractions,
+exponents and unsafe Java Long values are rejected. Supporting larger Long IDs
+would require a lossless backend wire contract, since ordinary JSON parsing may
+already have rounded them. No name-to-slug lookup is inferred from mock data.
+
+`toCoordinates` validates finite numeric latitude in [-90, 90] and longitude in
+[-180, 180]. Zero is valid. An incomplete pair returns null while individual
+axes remain available on the village; invalid supplied axes throw even when the
+other axis is missing. Null never becomes zero. No images or verification
+properties are added. Existing cards use demo artwork, so live page integration
+will need explicit missing-content handling before it can consume these models.
+
+Both page adapters return `{items, total, page, pageSize, totalPages,
+numberOfElements, first, last, hasNext, hasPrevious, empty, outOfRange}`.
+`adaptVillagePage` reads `number` and maps village rows using the supplied catalog;
+`adaptRecordPage` reads `page` and copies only the content array, leaving domain
+records untouched. It does not map population or heritage into village content.
+The caller retains ownership of those domain objects.
+
+Backend page 0 becomes frontend page 1; `toBackendPage` performs the inverse.
+Empty datasets retain `totalPages: 0`, rather than inventing an extra page.
+Out-of-range responses keep the actual requested page and empty items, with
+`outOfRange: true` (except the normal first page of an empty dataset). Any later
+navigation correction must fetch the desired page before presenting its data;
+the adapters never clamp or fetch. Counts, page sizes, totals, village flags and
+content lengths must be internally consistent; malformed/missing envelopes are
+errors, not empty datasets.
+
+Governorate catalog availability is separate from the villages on a single page.
+Missing catalog entries remain null, with their original governorate IDs retained.
+Duplicate governorate IDs fail explicitly; duplicate names remain distinct rows.
+Adapters do not provide publication security: DRAFT/UNDER_REVIEW/VERIFIED/REJECTED
+rows are mapped as supplied. Backend access/publication policy, auth and RBAC,
+live service wiring, missing-content UI, images and unresolved domain mappings
+remain future work. There is no client-side security filtering.
+
+Interactive browser verification was unavailable during adapter validation:
+both browser tools failed to connect to the native computer-use pipe. Automated
+mock-service tests and HTTP route checks passed, but interactive UI behavior
+was not verified in a browser.
