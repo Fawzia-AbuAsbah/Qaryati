@@ -8,10 +8,14 @@ import com.qaryati.community.repository.CommunityFacilityRepository;
 import com.qaryati.village.api.VillageLookupApi;
 import com.qaryati.village.api.VillageLookupResult;
 import com.qaryati.village.api.VillageLookupStatus;
+import com.qaryati.dataquality.api.AuditAction;
+import com.qaryati.dataquality.api.AuditWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -19,33 +23,44 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class CommunityFacilityServiceTest {
 
     private CommunityFacilityRepository repository;
     private VillageLookupApi villages;
+    private AuditWriter audits;
     private CommunityFacilityService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(CommunityFacilityRepository.class);
         villages = mock(VillageLookupApi.class);
-        service = new CommunityFacilityService(repository, new CommunityFacilityMapper(), villages);
+        audits = mock(AuditWriter.class);
+        service = new CommunityFacilityService(repository, new CommunityFacilityMapper(), villages, audits);
     }
 
     @Test
     void createsFacilityForExistingVillage() {
         existingVillage(1L);
         when(repository.saveAndFlush(any(CommunityFacility.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                    var facility = invocation.getArgument(0, CommunityFacility.class);
+                    id(facility, 5L);
+                    return facility;
+                });
 
         var response = service.create(request(1L, "Village school", CommunityFacilityType.SCHOOL));
 
         assertEquals(1L, response.villageId());
         assertEquals(CommunityFacilityType.SCHOOL, response.facilityType());
         verify(repository).saveAndFlush(any(CommunityFacility.class));
+        verify(audits).recordCommunityFacility(eq(5L), eq(AuditAction.CREATE), isNull(),
+                argThat(snapshot -> snapshot.villageId().equals(1L)
+                        && "Village school".equals(snapshot.name())
+                        && "SCHOOL".equals(snapshot.facilityType())
+                        && new BigDecimal("31.500000").equals(snapshot.latitude())));
     }
 
     @Test
@@ -54,6 +69,7 @@ class CommunityFacilityServiceTest {
 
         assertStatus(404, () -> service.create(request(1L, "Village school", CommunityFacilityType.SCHOOL)));
         verifyNoInteractions(repository);
+        verifyNoInteractions(audits);
     }
 
     @Test
@@ -82,6 +98,7 @@ class CommunityFacilityServiceTest {
     void updatesVillageAndCoordinatesAfterLookup() {
         var facility = new CommunityFacility(1L, "Village school", CommunityFacilityType.SCHOOL,
                 null, null, null);
+        id(facility, 5L);
         when(repository.findById(5L)).thenReturn(Optional.of(facility));
         existingVillage(2L);
         when(repository.saveAndFlush(facility)).thenReturn(facility);
@@ -91,18 +108,26 @@ class CommunityFacilityServiceTest {
         assertEquals(2L, response.villageId());
         assertEquals(CommunityFacilityType.CLINIC, response.facilityType());
         assertEquals(new BigDecimal("31.500000"), response.latitude());
+        verify(audits).recordCommunityFacility(eq(5L), eq(AuditAction.UPDATE),
+                argThat(snapshot -> snapshot.villageId().equals(1L) && snapshot.latitude() == null),
+                argThat(snapshot -> snapshot.villageId().equals(2L)
+                        && "CLINIC".equals(snapshot.facilityType())
+                        && new BigDecimal("31.500000").equals(snapshot.latitude())));
     }
 
     @Test
     void deletesExistingFacility() {
         var facility = new CommunityFacility(1L, "Village school", CommunityFacilityType.SCHOOL,
                 null, null, null);
+        id(facility, 5L);
         when(repository.findById(5L)).thenReturn(Optional.of(facility));
 
         service.delete(5L);
 
         verify(repository).delete(facility);
         verify(repository).flush();
+        verify(audits).recordCommunityFacility(eq(5L), eq(AuditAction.DELETE),
+                argThat(snapshot -> snapshot.villageId().equals(1L) && snapshot.latitude() == null), isNull());
     }
 
     @Test
@@ -112,6 +137,25 @@ class CommunityFacilityServiceTest {
                 .thenThrow(new DataIntegrityViolationException("constraint"));
 
         assertStatus(409, () -> service.create(request(1L, "Village school", CommunityFacilityType.SCHOOL)));
+        verifyNoInteractions(audits);
+    }
+
+    @Test
+    void propagatesAuditFailureAfterSuccessfulCreate() {
+        existingVillage(1L);
+        when(repository.saveAndFlush(any(CommunityFacility.class))).thenAnswer(invocation -> {
+            var facility = invocation.getArgument(0, CommunityFacility.class);
+            id(facility, 5L);
+            return facility;
+        });
+        doThrow(new IllegalStateException("audit failure")).when(audits).recordCommunityFacility(
+                eq(5L), eq(AuditAction.CREATE), isNull(), any());
+
+        assertEquals("audit failure", assertThrows(IllegalStateException.class,
+                () -> service.create(request(1L, "Village school", CommunityFacilityType.SCHOOL))).getMessage());
+        InOrder order = inOrder(repository, audits);
+        order.verify(repository).saveAndFlush(any(CommunityFacility.class));
+        order.verify(audits).recordCommunityFacility(eq(5L), eq(AuditAction.CREATE), isNull(), any());
     }
 
     private CommunityFacilityRequest request(Long villageId, String name, CommunityFacilityType type) {
@@ -127,5 +171,9 @@ class CommunityFacilityServiceTest {
     private void assertStatus(int expectedStatus, Runnable operation) {
         var exception = assertThrows(ResponseStatusException.class, operation::run);
         assertEquals(expectedStatus, exception.getStatusCode().value());
+    }
+
+    private void id(CommunityFacility facility, Long id) {
+        ReflectionTestUtils.setField(facility, "id", id);
     }
 }

@@ -6,6 +6,9 @@ import com.qaryati.community.entity.CommunityFacility;
 import com.qaryati.community.mapper.CommunityFacilityMapper;
 import com.qaryati.community.repository.CommunityFacilityRepository;
 import com.qaryati.village.api.VillageLookupApi;
+import com.qaryati.dataquality.api.AuditAction;
+import com.qaryati.dataquality.api.AuditWriter;
+import com.qaryati.dataquality.api.CommunityFacilityAuditSnapshot;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,18 +23,22 @@ public class CommunityFacilityService {
     private final CommunityFacilityRepository repository;
     private final CommunityFacilityMapper mapper;
     private final VillageLookupApi villages;
+    private final AuditWriter audits;
 
     public CommunityFacilityService(CommunityFacilityRepository repository, CommunityFacilityMapper mapper,
-                                    VillageLookupApi villages) {
+                                    VillageLookupApi villages, AuditWriter audits) {
         this.repository = repository;
         this.mapper = mapper;
         this.villages = villages;
+        this.audits = audits;
     }
 
     @Transactional
     public CommunityFacilityResponse create(CommunityFacilityRequest request) {
         requireVillage(request.villageId());
-        return save(mapper.toEntity(request));
+        CommunityFacility saved = save(mapper.toEntity(request));
+        audits.recordCommunityFacility(saved.getId(), AuditAction.CREATE, null, snapshot(saved));
+        return mapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -54,16 +61,22 @@ public class CommunityFacilityService {
         validateId(id);
         CommunityFacility facility = findFacility(id);
         requireVillage(request.villageId());
+        CommunityFacilityAuditSnapshot before = snapshot(facility);
         mapper.updateEntity(request, facility);
-        return save(facility);
+        CommunityFacility saved = save(facility);
+        audits.recordCommunityFacility(saved.getId(), AuditAction.UPDATE, before, snapshot(saved));
+        return mapper.toResponse(saved);
     }
 
     @Transactional
     public void delete(Long id) {
         validateId(id);
+        CommunityFacility facility = findFacility(id);
+        CommunityFacilityAuditSnapshot before = snapshot(facility);
         try {
-            repository.delete(findFacility(id));
+            repository.delete(facility);
             repository.flush();
+            audits.recordCommunityFacility(id, AuditAction.DELETE, before, null);
         } catch (DataIntegrityViolationException ex) {
             throw integrityConflict();
         }
@@ -81,9 +94,9 @@ public class CommunityFacilityService {
         }
     }
 
-    private CommunityFacilityResponse save(CommunityFacility facility) {
+    private CommunityFacility save(CommunityFacility facility) {
         try {
-            return mapper.toResponse(repository.saveAndFlush(facility));
+            return repository.saveAndFlush(facility);
         } catch (DataIntegrityViolationException ex) {
             throw integrityConflict();
         }
@@ -98,5 +111,10 @@ public class CommunityFacilityService {
     private ResponseStatusException integrityConflict() {
         return new ResponseStatusException(HttpStatus.CONFLICT,
                 "Community facility write conflicts with database constraints");
+    }
+
+    private CommunityFacilityAuditSnapshot snapshot(CommunityFacility facility) {
+        return new CommunityFacilityAuditSnapshot(facility.getVillageId(), facility.getName(),
+                facility.getFacilityType().name(), facility.getLatitude(), facility.getLongitude());
     }
 }

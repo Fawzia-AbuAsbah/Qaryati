@@ -8,6 +8,9 @@ import com.qaryati.agriculture.repository.AgriculturalProductRepository;
 import com.qaryati.agriculture.repository.VillageAgricultureRepository;
 import com.qaryati.agriculture.dto.VillageAgricultureRequest;
 import com.qaryati.village.api.VillageLookupApi;
+import com.qaryati.dataquality.api.AuditAction;
+import com.qaryati.dataquality.api.AuditWriter;
+import com.qaryati.dataquality.api.VillageAgricultureAuditSnapshot;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,17 +25,20 @@ public class VillageAgricultureService {
     private final AgriculturalProductRepository productRepository;
     private final VillageAgricultureMapper mapper;
     private final VillageLookupApi villages;
+    private final AuditWriter audits;
 
     public VillageAgricultureService(
             VillageAgricultureRepository repository,
             AgriculturalProductRepository productRepository,
             VillageAgricultureMapper mapper,
-            VillageLookupApi villages) {
+            VillageLookupApi villages,
+            AuditWriter audits) {
 
         this.repository = repository;
         this.productRepository = productRepository;
         this.mapper = mapper;
         this.villages = villages;
+        this.audits = audits;
     }
 
     @Transactional(readOnly = true)
@@ -95,9 +101,11 @@ public class VillageAgricultureService {
             );
         }
 
+        VillageAgricultureAuditSnapshot before = snapshot(relation);
         mapper.updateEntity(request, relation);
-
-        return save(relation);
+        VillageAgriculture saved = save(relation);
+        audits.recordVillageAgriculture(saved.getId(), AuditAction.UPDATE, before, snapshot(saved));
+        return mapper.toResponse(saved);
     }
 
     @Transactional
@@ -110,10 +118,12 @@ public class VillageAgricultureService {
                         HttpStatus.NOT_FOUND,
                         "Village agriculture record not found"
                 ));
+        VillageAgricultureAuditSnapshot before = snapshot(relation);
 
         try {
             repository.delete(relation);
             repository.flush();
+            audits.recordVillageAgriculture(id, AuditAction.DELETE, before, null);
         } catch (DataIntegrityViolationException ex) {
             throw integrityConflict();
         }
@@ -141,7 +151,9 @@ public class VillageAgricultureService {
             );
         }
 
-        return save(mapper.toEntity(request));
+        VillageAgriculture saved = save(mapper.toEntity(request));
+        audits.recordVillageAgriculture(saved.getId(), AuditAction.CREATE, null, snapshot(saved));
+        return mapper.toResponse(saved);
     }
 
     private void requireVillage(Long villageId) {
@@ -154,9 +166,9 @@ public class VillageAgricultureService {
         }
     }
 
-    private VillageAgricultureResponse save(VillageAgriculture relation) {
+    private VillageAgriculture save(VillageAgriculture relation) {
         try {
-            return mapper.toResponse(repository.saveAndFlush(relation));
+            return repository.saveAndFlush(relation);
         } catch (DataIntegrityViolationException ex) {
             throw integrityConflict();
         }
@@ -176,5 +188,10 @@ public class VillageAgricultureService {
                 HttpStatus.CONFLICT,
                 "Village agriculture write conflicts with database constraints"
         );
+    }
+
+    private VillageAgricultureAuditSnapshot snapshot(VillageAgriculture relation) {
+        return new VillageAgricultureAuditSnapshot(relation.getVillageId(), relation.getProductId(),
+                relation.getImportance() == null ? null : relation.getImportance().name());
     }
 }

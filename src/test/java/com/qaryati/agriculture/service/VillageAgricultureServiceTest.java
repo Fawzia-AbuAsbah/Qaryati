@@ -10,10 +10,14 @@ import com.qaryati.agriculture.dto.VillageAgricultureRequest;
 import com.qaryati.village.api.VillageLookupApi;
 import com.qaryati.village.api.VillageLookupResult;
 import com.qaryati.village.api.VillageLookupStatus;
+import com.qaryati.dataquality.api.AuditAction;
+import com.qaryati.dataquality.api.AuditWriter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -27,6 +31,7 @@ class VillageAgricultureServiceTest {
     private VillageAgricultureService service;
     private AgriculturalProductRepository productRepository;
     private VillageLookupApi villages;
+    private AuditWriter audits;
 
     @BeforeEach
     void setUp() {
@@ -35,11 +40,13 @@ class VillageAgricultureServiceTest {
 
         productRepository = mock(AgriculturalProductRepository.class);
         villages = mock(VillageLookupApi.class);
+        audits = mock(AuditWriter.class);
         service = new VillageAgricultureService(
                 repository,
                 productRepository,
                 new VillageAgricultureMapper(),
-                villages
+                villages,
+                audits
         );
     }
 
@@ -52,6 +59,7 @@ class VillageAgricultureServiceTest {
                 "Olive cultivation",
                 AgricultureImportance.HIGH
         );
+        id(relation, 1L);
 
         when(repository.findById(1L))
                 .thenReturn(Optional.of(relation));
@@ -124,6 +132,7 @@ class VillageAgricultureServiceTest {
                 10L, 5L, "Old description",
                 AgricultureImportance.LOW
         );
+        id(relation, 1L);
 
         when(repository.findById(1L))
                 .thenReturn(Optional.of(relation));
@@ -142,6 +151,9 @@ class VillageAgricultureServiceTest {
         assertEquals(AgricultureImportance.HIGH, result.importance());
 
         verify(repository).saveAndFlush(relation);
+        verify(audits).recordVillageAgriculture(eq(1L), eq(AuditAction.UPDATE),
+                argThat(snapshot -> "LOW".equals(snapshot.importance())),
+                argThat(snapshot -> "HIGH".equals(snapshot.importance())));
     }
 
     @Test
@@ -151,6 +163,7 @@ class VillageAgricultureServiceTest {
                 10L, 5L, "Olives",
                 AgricultureImportance.MEDIUM
         );
+        id(relation, 1L);
 
         when(repository.findById(1L))
                 .thenReturn(Optional.of(relation));
@@ -187,6 +200,9 @@ class VillageAgricultureServiceTest {
         service.delete(1L);
 
         verify(repository).delete(relation);
+        verify(repository).flush();
+        verify(audits).recordVillageAgriculture(eq(1L), eq(AuditAction.DELETE),
+                argThat(snapshot -> "HIGH".equals(snapshot.importance())), isNull());
     }
 
     @Test
@@ -216,7 +232,11 @@ class VillageAgricultureServiceTest {
         when(productRepository.existsById(5L)).thenReturn(true);
         when(repository.existsByVillageIdAndProductId(10L, 5L)).thenReturn(false);
         when(repository.saveAndFlush(any(VillageAgriculture.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                    var relation = invocation.getArgument(0, VillageAgriculture.class);
+                    id(relation, 1L);
+                    return relation;
+                });
 
         var response = service.create(request);
 
@@ -224,6 +244,9 @@ class VillageAgricultureServiceTest {
         assertEquals(5L, response.productId());
         assertEquals(AgricultureImportance.HIGH, response.importance());
         verify(repository).saveAndFlush(any(VillageAgriculture.class));
+        verify(audits).recordVillageAgriculture(eq(1L), eq(AuditAction.CREATE), isNull(),
+                argThat(snapshot -> snapshot.villageId().equals(10L) && snapshot.productId().equals(5L)
+                        && "HIGH".equals(snapshot.importance())));
     }
 
     @Test
@@ -238,6 +261,7 @@ class VillageAgricultureServiceTest {
 
         assertEquals(404, ex.getStatusCode().value());
         verifyNoInteractions(productRepository, repository);
+        verifyNoInteractions(audits);
     }
 
     @Test
@@ -308,10 +332,35 @@ class VillageAgricultureServiceTest {
         var ex = assertThrows(ResponseStatusException.class, () -> service.create(request));
 
         assertEquals(409, ex.getStatusCode().value());
+        verifyNoInteractions(audits);
+    }
+
+    @Test
+    void propagatesAuditFailureAfterSuccessfulCreate() {
+        var request = new VillageAgricultureRequest(10L, 5L, "Olives", AgricultureImportance.HIGH);
+        when(villages.findById(10L)).thenReturn(Optional.of(village(10L)));
+        when(productRepository.existsById(5L)).thenReturn(true);
+        when(repository.existsByVillageIdAndProductId(10L, 5L)).thenReturn(false);
+        when(repository.saveAndFlush(any(VillageAgriculture.class))).thenAnswer(invocation -> {
+            var relation = invocation.getArgument(0, VillageAgriculture.class);
+            id(relation, 1L);
+            return relation;
+        });
+        doThrow(new IllegalStateException("audit failure")).when(audits).recordVillageAgriculture(
+                eq(1L), eq(AuditAction.CREATE), isNull(), any());
+
+        assertEquals("audit failure", assertThrows(IllegalStateException.class, () -> service.create(request)).getMessage());
+        InOrder order = inOrder(repository, audits);
+        order.verify(repository).saveAndFlush(any(VillageAgriculture.class));
+        order.verify(audits).recordVillageAgriculture(eq(1L), eq(AuditAction.CREATE), isNull(), any());
     }
 
     private VillageLookupResult village(Long id) {
         return new VillageLookupResult(id, VillageLookupStatus.DRAFT, false);
+    }
+
+    private void id(VillageAgriculture relation, Long id) {
+        ReflectionTestUtils.setField(relation, "id", id);
     }
 
 }
