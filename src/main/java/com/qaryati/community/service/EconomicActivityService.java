@@ -6,6 +6,9 @@ import com.qaryati.community.entity.EconomicActivity;
 import com.qaryati.community.mapper.EconomicActivityMapper;
 import com.qaryati.community.repository.EconomicActivityRepository;
 import com.qaryati.village.api.VillageLookupApi;
+import com.qaryati.dataquality.api.AuditAction;
+import com.qaryati.dataquality.api.AuditWriter;
+import com.qaryati.dataquality.api.EconomicActivityAuditSnapshot;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,19 +23,23 @@ public class EconomicActivityService {
     private final EconomicActivityRepository repository;
     private final EconomicActivityMapper mapper;
     private final VillageLookupApi villages;
+    private final AuditWriter audits;
 
     public EconomicActivityService(EconomicActivityRepository repository, EconomicActivityMapper mapper,
-                                   VillageLookupApi villages) {
+                                   VillageLookupApi villages, AuditWriter audits) {
         this.repository = repository;
         this.mapper = mapper;
         this.villages = villages;
+        this.audits = audits;
     }
 
     @Transactional
     public EconomicActivityResponse create(EconomicActivityRequest request) {
         requireVillage(request.villageId());
         rejectDuplicate(request, null);
-        return save(mapper.toEntity(request));
+        EconomicActivity saved = save(mapper.toEntity(request));
+        audits.recordEconomicActivity(saved.getId(), AuditAction.CREATE, null, snapshot(saved));
+        return mapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -56,16 +63,22 @@ public class EconomicActivityService {
         EconomicActivity activity = findActivity(id);
         requireVillage(request.villageId());
         rejectDuplicate(request, id);
+        EconomicActivityAuditSnapshot before = snapshot(activity);
         mapper.updateEntity(request, activity);
-        return save(activity);
+        EconomicActivity saved = save(activity);
+        audits.recordEconomicActivity(saved.getId(), AuditAction.UPDATE, before, snapshot(saved));
+        return mapper.toResponse(saved);
     }
 
     @Transactional
     public void delete(Long id) {
         validateId(id);
+        EconomicActivity activity = findActivity(id);
+        EconomicActivityAuditSnapshot before = snapshot(activity);
         try {
-            repository.delete(findActivity(id));
+            repository.delete(activity);
             repository.flush();
+            audits.recordEconomicActivity(id, AuditAction.DELETE, before, null);
         } catch (DataIntegrityViolationException ex) {
             throw integrityConflict();
         }
@@ -95,9 +108,9 @@ public class EconomicActivityService {
         }
     }
 
-    private EconomicActivityResponse save(EconomicActivity activity) {
+    private EconomicActivity save(EconomicActivity activity) {
         try {
-            return mapper.toResponse(repository.saveAndFlush(activity));
+            return repository.saveAndFlush(activity);
         } catch (DataIntegrityViolationException ex) {
             throw integrityConflict();
         }
@@ -112,5 +125,10 @@ public class EconomicActivityService {
     private ResponseStatusException integrityConflict() {
         return new ResponseStatusException(HttpStatus.CONFLICT,
                 "Economic activity write conflicts with database constraints");
+    }
+
+    private EconomicActivityAuditSnapshot snapshot(EconomicActivity activity) {
+        return new EconomicActivityAuditSnapshot(activity.getVillageId(), activity.getName(),
+                activity.getActivityType().name());
     }
 }

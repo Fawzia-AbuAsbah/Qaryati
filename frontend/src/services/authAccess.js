@@ -13,6 +13,7 @@ export function authAccessDecision(session, { requiredRoles = [], now = Date.now
 }
 
 export const memberRoutes = Object.freeze([
+  Object.freeze({ to: '/population-records', label: 'سجلات السكان', requiredRoles: applicationRoles }),
   Object.freeze({ to: '/sources', label: 'المصادر', requiredRoles: applicationRoles }),
   Object.freeze({ to: '/data-conflicts', label: 'تعارضات البيانات', requiredRoles: Object.freeze(['EDITOR', 'ADMIN']) }),
   Object.freeze({ to: '/audit-logs', label: 'سجل التدقيق', requiredRoles: Object.freeze(['ADMIN']) }),
@@ -23,6 +24,6 @@ export function safeAuthReturnTo(value) {
   let url
   try { url = new URL(value, 'https://qaryati-ui.invalid') } catch { return '/' }
   if (url.origin !== 'https://qaryati-ui.invalid' || url.pathname === '/login') return '/'
-  if (!['/', '/villages', '/map', '/sources', '/data-conflicts', '/audit-logs'].includes(url.pathname) && !/^\/villages\/[^/]+$/.test(url.pathname)) return '/'
+  if (!['/', '/villages', '/map', '/population-records', '/sources', '/data-conflicts', '/audit-logs'].includes(url.pathname) && !/^\/villages\/[^/]+$/.test(url.pathname)) return '/'
   return `${url.pathname}${url.search}${url.hash}`
 }

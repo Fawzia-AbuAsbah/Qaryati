@@ -82,7 +82,11 @@ test('public identity availability never grants source permission to anonymous, 
 
 test('basic browse and identity switches are independent', async t => {
   const calls = []
-  const request = t.mock.fn(async path => { calls.push(path); return path.endsWith('/42') ? detailDto : page })
+  const request = t.mock.fn(async path => {
+    calls.push(path)
+    if (path === '/public/governorates') return [{ id: 2, nameAr: 'Governorate', nameEn: null }]
+    return path.endsWith('/42') ? detailDto : page
+  })
   const browse = createVillageExplorerService({ mode: 'api', browsingVerified: true, request })
   const noIdentity = createVillageDetailsService({ mode: 'api', identityVerified: false, request })
   await browse.listVillages()
@@ -91,9 +95,9 @@ test('basic browse and identity switches are independent', async t => {
   const identity = createVillageDetailsService({ mode: 'api', identityVerified: true, request })
   await identity.getVillage('42')
   await assert.rejects(noBrowse.listVillages(), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })
-  await assert.rejects(identity.getGovernorates(), { code: 'PUBLIC_CATALOGUE_UNAVAILABLE' })
+  assert.equal((await identity.getGovernorates())[0].name, 'Governorate')
   await assert.rejects(identity.listSection('42', 'population'), { code: 'UNAVAILABLE_SECTION' })
-  assert.deepEqual(calls, ['/public/villages', '/public/villages/42'])
+  assert.deepEqual(calls, ['/public/villages', '/public/villages/42', '/public/governorates'])
 })
 
 test('Details accepts eleven fields while Explorer and Map still reject detail-shaped collection rows', async t => {

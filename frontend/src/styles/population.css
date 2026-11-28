@@ -1,0 +1,9 @@
+.population-page, .population-results { display: grid; gap: .9rem; }
+.population-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.population-controls label { display: grid; gap: .25rem; flex: 1 1 13rem; font-weight: 650; }
+.population-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+.population-table { width: 100%; border-collapse: collapse; min-width: 42rem; }
+.population-table th, .population-table td { padding: .65rem .8rem; text-align: start; border-block-end: 1px solid var(--line); vertical-align: top; }
+.population-table th { color: var(--deep); background: #f3f5e9; }
+.population-table tr:last-child td { border-block-end: 0; }
+.population-meta { color: var(--muted); }

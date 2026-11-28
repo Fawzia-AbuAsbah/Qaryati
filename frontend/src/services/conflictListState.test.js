@@ -211,7 +211,7 @@ test('cleanup cancels pre-dispatch work and supports a StrictMode remount', asyn
 })
 
 test('disabled identity capability sends no HTTP and mock browsing makes no conflict requests', async () => {
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(villageDataMode, 'mock')
   const request = () => assert.fail('No public API or protected conflict requests')
   await assert.rejects(createVillageDetailsService({ mode: 'api', identityVerified: false, request }).getVillage('42'), { code: 'PUBLIC_CONTRACTS_UNCONFIRMED' })

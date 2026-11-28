@@ -267,6 +267,6 @@ test('failed effective-role refresh redacts the linking store and initiates no p
 })
 
 test('linking does not approve public catalogues or rich sections and mock remains default', () => {
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
   assert.equal(villageDataMode, 'mock')
 })

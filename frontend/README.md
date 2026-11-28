@@ -41,7 +41,8 @@ Baseline: `59fcf8c` on `roaa/frontend-final-integration`, initially clean with
 943 passing tests. Fetching remote refs found no incoming changes;
 `origin/main` remains `4e2d137`. Implementation uses the checked-out public
 Village controller/DTO/service/security contracts and integration documentation.
-Public catalogues and rich sections remain unavailable. Mock remains the default.
+Public geographic catalogues are integrated in API mode; rich sections remain
+unavailable. Mock remains the default.
 
 Home keeps its existing hero, navigation and mock featured selection. API Home
 search submits only the encoded `q` UI parameter to `/villages`; Explorer maps it
@@ -535,15 +536,16 @@ The current behavior in this section supersedes earlier gated integration report
 Baseline: `c0426d9` on `roaa/frontend-final-integration`. A fetch found no incoming
 changes from `origin/main` (`4e2d137`). The checked-out public controller, DTOs,
 service/repository eligibility rules, security configuration, tests and
-`docs/integration/FRONTEND_BACKEND_CONTRACTS.md` were reviewed. No pending
-catalogue, population-filtering or expanded detail contracts are assumed.
+`docs/integration/FRONTEND_BACKEND_CONTRACTS.md` were reviewed. The geographic
+catalogue and expanded-detail contracts are now confirmed; public population
+filtering remains an authenticated, separate contract.
 
-`publicVillageCapabilities` in `villageMode.js` separates basic browsing and
-identity (enabled) from geographic catalogues and rich sections (disabled).
+`publicVillageCapabilities` in `villageMode.js` separates basic browsing,
+identity and geographic catalogues (enabled) from rich sections (disabled).
 The shared mode variable retains `mock` as the default. Explicit `api` mode
 uses real public endpoints and reports errors without mock fallback. Mode selection
 does not approve missing contracts. Factory overrides independently disable browsing
-or identity for tests; no environment switch enables catalogues or rich sections.
+or identity for tests; no environment switch enables rich sections.
 Keep the default until separately approved live integration validation.
 
 Verified paths, relative to the unchanged `/api/v1` base:
@@ -552,6 +554,8 @@ Verified paths, relative to the unchanged `/api/v1` base:
 | --- | --- |
 | GET `/public/villages` | Paged public DTOs; optional `search`, `governorateId`, `localAuthorityId`, `page`, `size`, `sortBy`, `sortDir` only |
 | GET `/public/villages/{id}` | One public DTO; no query parameters; hidden/missing villages both return 404 |
+| GET `/public/governorates` | Anonymous array of the exact `id`, `nameAr`, `nameEn` public projection |
+| GET `/public/local-authorities?governorateId={id}` | Anonymous array of the exact `id`, `nameAr`, `nameEn`, `governorateId` public projection |
 
 The backend enforces VERIFIED status and non-archived eligibility before list
 pagination/counting and in the detail lookup. The browser sends no status filter
@@ -583,16 +587,17 @@ Only `id`, `nameAr` and `nameEn` sorting are offered. Obsolete URL sorts
 `createdAt`/`updatedAt` normalize to `id` with a visible explanation.
 Direct unsupported service options are rejected before HTTP; editorial URL
 parameters are never forwarded. Unknown sort values remain validation errors.
-There are no mandatory catalogue requests: API mode shows unavailable names and
-active numeric URL filters honestly, without fabricated dropdown entries or
-ID mappings. Mock mode retains its name-based governorate dropdown.
+API Explorer loads the public governorate catalogue independently from village
+results, then loads the local-authority catalogue for the selected governorate.
+Catalogue loading, empty and error states do not hide otherwise available village
+results. Unknown URL IDs remain visible as numeric fallback selections rather than
+being relabelled. Mock mode retains its name-based governorate dropdown.
 
-Basic API Details displays Arabic/English names, geographic IDs and supplied
-coordinate axes. Invalid IDs send no HTTP. Identity 404 never mounts children or
-tries an editorial endpoint. Population, historical overviews/events, heritage,
-culture, agriculture, facilities and economic activities are explicitly unavailable.
-The public Details renderer sends no Heritage, Population, Agriculture, Community,
-governorate or local-authority request. Existing editorial adapters remain separate.
+Basic API Details displays Arabic/English names, geographic IDs, resolved public
+catalogue names and supplied coordinate axes. Invalid IDs send no HTTP. Identity
+404 never mounts children or tries an editorial endpoint. Population, historical
+overviews/events, heritage, culture, agriculture, facilities and economic activities
+remain explicitly unavailable. Existing editorial adapters remain separate.
 
 After a matching safe public identity loads, the existing authenticated Member 3
 panels can mount. Sources reads require VIEWER/EDITOR/ADMIN; linking requires
@@ -614,7 +619,7 @@ and marker/popup/tile interaction validation. Offset pagination has no snapshot
 token, so count/order checks do not prove a point-in-time snapshot.
 
 There are no proxy, dependency, backend or security changes. Live routing/CORS,
-real backend behavior and catalogue/rich-section contracts remain separate work.
+real backend behavior and rich-section contracts remain separate work.
 The frontend build alone does not establish live integration.
 
 Phase 5.6 validation: 943 frontend tests passed, with successful build, lint and

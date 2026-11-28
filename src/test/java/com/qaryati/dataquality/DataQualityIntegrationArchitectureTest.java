@@ -22,7 +22,9 @@ class DataQualityIntegrationArchitectureTest {
                         EventSourceLinks.class.getName(), HistoricalEventAuditSnapshot.class.getName(),
                         VillageHistorySourceLinks.class.getName(), VillageHistoryAuditSnapshot.class.getName(),
                         CulturalHeritageSourceLinks.class.getName(), CulturalHeritageAuditSnapshot.class.getName(),
-                        HeritageSiteSourceLinks.class.getName(), HeritageSiteAuditSnapshot.class.getName()),
+                        HeritageSiteSourceLinks.class.getName(), HeritageSiteAuditSnapshot.class.getName(),
+                        AgriculturalProductAuditSnapshot.class.getName(), VillageAgricultureAuditSnapshot.class.getName(),
+                        EconomicActivityAuditSnapshot.class.getName(), CommunityFacilityAuditSnapshot.class.getName()),
                 module.getNamedInterfaces().getByName("integration").orElseThrow()
                         .asJavaClasses().map(type -> type.getName()).collect(Collectors.toSet()));
         assertTrue(module.isExposed(CulturalHeritageSourceLinks.class));
@@ -41,6 +43,10 @@ class DataQualityIntegrationArchitectureTest {
         assertFalse(module.isExposed(com.qaryati.dataquality.repository.VillageHistorySourceLinkRepository.class));
         assertTrue(module.isExposed(HeritageSiteSourceLinks.class));
         assertTrue(module.isExposed(HeritageSiteAuditSnapshot.class));
+        assertTrue(module.isExposed(AgriculturalProductAuditSnapshot.class));
+        assertTrue(module.isExposed(VillageAgricultureAuditSnapshot.class));
+        assertTrue(module.isExposed(EconomicActivityAuditSnapshot.class));
+        assertTrue(module.isExposed(CommunityFacilityAuditSnapshot.class));
         assertFalse(module.isExposed(com.qaryati.dataquality.service.HeritageSiteSourceLinksService.class));
         assertFalse(module.isExposed(com.qaryati.dataquality.repository.HeritageSiteSourceLinkRepository.class));
         assertFalse(module.isExposed(com.qaryati.dataquality.service.EventSourceLinksService.class));

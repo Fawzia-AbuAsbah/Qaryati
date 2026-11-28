@@ -5,6 +5,10 @@ import com.qaryati.dataquality.api.HeritageSiteAuditSnapshot;
 import com.qaryati.dataquality.api.AuditSnapshot;
 import com.qaryati.dataquality.api.AuditWriter;
 import com.qaryati.dataquality.api.HistoricalEventAuditSnapshot;
+import com.qaryati.dataquality.api.AgriculturalProductAuditSnapshot;
+import com.qaryati.dataquality.api.VillageAgricultureAuditSnapshot;
+import com.qaryati.dataquality.api.EconomicActivityAuditSnapshot;
+import com.qaryati.dataquality.api.CommunityFacilityAuditSnapshot;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
@@ -114,6 +118,86 @@ public class AuditWriterService implements AuditWriter {
         data.put("sourceIds", value.sourceIds());
         if (value.verificationStatus() != null) data.put("verificationStatus", value.verificationStatus());
         return data;
+    }
+
+    @Override @Transactional
+    public void recordAgriculturalProduct(Long productId, AuditAction action,
+            AgriculturalProductAuditSnapshot before, AgriculturalProductAuditSnapshot after) {
+        requireCrudState(action, before, after, "agricultural product");
+        auditLogService.record("AGRICULTURAL_PRODUCT", productId, action.name(), productSnapshot(before),
+                productSnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> productSnapshot(AgriculturalProductAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("nameAr", value.nameAr());
+        if (value.nameEn() != null) data.put("nameEn", value.nameEn());
+        data.put("productType", value.productType());
+        return data;
+    }
+
+    @Override @Transactional
+    public void recordVillageAgriculture(Long relationId, AuditAction action,
+            VillageAgricultureAuditSnapshot before, VillageAgricultureAuditSnapshot after) {
+        requireCrudState(action, before, after, "village agriculture");
+        auditLogService.record("VILLAGE_AGRICULTURE", relationId, action.name(), relationSnapshot(before),
+                relationSnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> relationSnapshot(VillageAgricultureAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("productId", value.productId());
+        if (value.importance() != null) data.put("importance", value.importance());
+        return data;
+    }
+
+    @Override @Transactional
+    public void recordEconomicActivity(Long activityId, AuditAction action,
+            EconomicActivityAuditSnapshot before, EconomicActivityAuditSnapshot after) {
+        requireCrudState(action, before, after, "economic activity");
+        auditLogService.record("ECONOMIC_ACTIVITY", activityId, action.name(), activitySnapshot(before),
+                activitySnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> activitySnapshot(EconomicActivityAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("name", value.name());
+        data.put("activityType", value.activityType());
+        return data;
+    }
+
+    @Override @Transactional
+    public void recordCommunityFacility(Long facilityId, AuditAction action,
+            CommunityFacilityAuditSnapshot before, CommunityFacilityAuditSnapshot after) {
+        requireCrudState(action, before, after, "community facility");
+        auditLogService.record("COMMUNITY_FACILITY", facilityId, action.name(), facilitySnapshot(before),
+                facilitySnapshot(after), "Domain record " + action.name());
+    }
+
+    private Map<String, Object> facilitySnapshot(CommunityFacilityAuditSnapshot value) {
+        if (value == null) return null;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("villageId", value.villageId());
+        data.put("name", value.name());
+        data.put("facilityType", value.facilityType());
+        if (value.latitude() != null) {
+            data.put("latitude", value.latitude());
+            data.put("longitude", value.longitude());
+        }
+        return data;
+    }
+
+    private static void requireCrudState(AuditAction action, Object before, Object after, String type) {
+        if (action == null || switch (action) {
+            case CREATE -> before != null || after == null;
+            case UPDATE -> before == null || after == null;
+            case DELETE -> before == null || after != null;
+        }) throw new IllegalArgumentException("Invalid " + type + " audit state");
     }
 
     @Override

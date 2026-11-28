@@ -10,18 +10,22 @@ import { villageDetailsService } from '../services/villageDetailsService.js'
 import { villageDetailsHref } from '../services/villageDetailsState.js'
 import { villageMapService } from '../services/villageMapService.js'
 import { villageMapHref } from '../services/villageMapState.js'
+import { catalogueName, usePublicGeographicCatalogues } from '../services/usePublicGeographicCatalogues.js'
 
 const number = new Intl.NumberFormat('ar')
 const sortLabels = { id: 'المعرّف', nameAr: 'الاسم العربي', nameEn: 'الاسم الإنجليزي' }
 
-function ApiVillageCard({ village, returnTo }) {
+function ApiVillageCard({ village, returnTo, catalogues }) {
   const detailsHref = villageDetailsHref(village.id, villageExplorerService, villageDetailsService)
   const mapHref = villageMapHref(village, villageExplorerService, villageMapService)
+  const governorate = catalogueName(catalogues.governorates, village.governorateId)
+  const localAuthority = catalogueName(catalogues.localAuthorities, village.localAuthorityId)
+  const location = [governorate, localAuthority].filter(Boolean).join(' — ')
   return (
     <article className="village-card">
       <div className="card-scene missing-scene"><MapPin aria-hidden="true" /><p>صورة القرية غير متاحة</p></div>
       <div className="card-body">
-        <p className="location"><MapPin size={16} aria-hidden="true" />اسم المحافظة غير متاح</p>
+        <p className="location"><MapPin size={16} aria-hidden="true" />{location || 'اسم الموقع الإداري غير متاح'}</p>
         <h3>{village.name ?? 'اسم القرية غير متاح'}</h3>
         <div className="actions">
           {detailsHref ? <Link className="card-link" to={detailsHref} state={{ explorerReturnTo: returnTo }}>تفاصيل القرية</Link> : <p>تفاصيل القرية غير متاحة حاليًا.</p>}
@@ -38,6 +42,7 @@ export default function VillageExplorer() {
   const { query, governorate, governorateId, localAuthorityId, page, sortBy, sortDir } = readExplorerQuery(params)
   const apiMode = villageExplorerService.mode === 'api'
   const selectedGovernorate = apiMode ? governorateId : governorate
+  const catalogues = usePublicGeographicCatalogues({ service: villageExplorerService, governorateId: apiMode ? governorateId : null })
   const requestKey = JSON.stringify([query, governorate, governorateId, localAuthorityId, page, sortBy, sortDir])
   const normalizedResult = useRef(null)
   const load = useCallback(signal => {
@@ -74,10 +79,35 @@ export default function VillageExplorer() {
           <label htmlFor="village-search">اسم القرية
             <span className="field"><Search size={19} aria-hidden="true" /><input id="village-search" type="search" value={query} maxLength={apiMode ? 180 : undefined} disabled={!villageExplorerService.available} placeholder="مثال: بتير" onChange={(event) => update('q', event.target.value, true)} /></span>
           </label>
-          {apiMode ? <div className="notice"><p>أسماء المحافظات وقائمة التصفية غير متاحة من الخدمة العامة حاليًا.</p>
-            {governorateId && <p>تصفية بمعرّف المحافظة: <bdi>{governorateId}</bdi>؛ الاسم غير متاح.</p>}
-            {localAuthorityId && <p>تصفية بمعرّف الهيئة المحلية: <bdi>{localAuthorityId}</bdi>؛ الاسم غير متاح.</p>}
-          </div> : <label htmlFor="governorate">المحافظة
+          {apiMode ? <>
+            <label htmlFor="governorate">المحافظة
+              <span className="field select-field">
+                <select id="governorate" value={governorateId} disabled={!villageExplorerService.available || catalogues.governorates.status === 'loading'} onChange={(event) => update('governorateId', event.target.value)}>
+                  <option value="">جميع المحافظات</option>
+                  {governorateId && !catalogues.governorates.items.some(item => item.id === governorateId) && <option value={governorateId}>معرّف المحافظة {governorateId}</option>}
+                  {catalogues.governorates.items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <ChevronDown size={19} aria-hidden="true" />
+              </span>
+            </label>
+            {catalogues.governorates.status === 'loading' && <p className="notice" role="status">جارٍ تحميل قائمة المحافظات…</p>}
+            {catalogues.governorates.status === 'empty' && <p className="notice" role="status">لا توجد محافظات متاحة للتصفية حاليًا.</p>}
+            {catalogues.governorates.status === 'error' && <p className="notice" role="alert">تعذّر تحميل قائمة المحافظات. ما زال البحث وعرض القرى متاحين.</p>}
+            {governorateId && <label htmlFor="local-authority">الهيئة المحلية
+              <span className="field select-field">
+                <select id="local-authority" value={localAuthorityId} disabled={!villageExplorerService.available || catalogues.localAuthorities.status === 'loading'} onChange={(event) => update('localAuthorityId', event.target.value)}>
+                  <option value="">جميع الهيئات المحلية</option>
+                  {localAuthorityId && !catalogues.localAuthorities.items.some(item => item.id === localAuthorityId) && <option value={localAuthorityId}>معرّف الهيئة المحلية {localAuthorityId}</option>}
+                  {catalogues.localAuthorities.items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <ChevronDown size={19} aria-hidden="true" />
+              </span>
+            </label>}
+            {governorateId && catalogues.localAuthorities.status === 'loading' && <p className="notice" role="status">جارٍ تحميل قائمة الهيئات المحلية…</p>}
+            {governorateId && catalogues.localAuthorities.status === 'empty' && <p className="notice" role="status">لا توجد هيئات محلية لهذه المحافظة.</p>}
+            {governorateId && catalogues.localAuthorities.status === 'error' && <p className="notice" role="alert">تعذّر تحميل قائمة الهيئات المحلية. ما زالت تصفية المحافظة متاحة.</p>}
+            {localAuthorityId && !governorateId && <p className="notice" role="status">تصفية الهيئة المحلية الحالية تستخدم المعرّف {localAuthorityId}. اختر محافظة لعرض اسم الهيئة.</p>}
+          </> : <label htmlFor="governorate">المحافظة
             <span className="field select-field">
               <select id="governorate" value={selectedGovernorate} disabled={!villageExplorerService.available} onChange={(event) => update('governorate', event.target.value)}>
                 <option value="">جميع المحافظات</option>
@@ -106,7 +136,7 @@ export default function VillageExplorer() {
         {apiMode && ['createdAt', 'updatedAt'].includes(params.get('sortBy')) && <p className="notice" role="status">استُبدل ترتيب زمني قديم بترتيب المعرّف.</p>}
         <p className="results" role="status">{data ? `عدد النتائج: ${number.format(data.total)}` : ''}</p>
         {data?.items.length ? (
-          <div className="village-grid">{data.items.map(village => apiMode ? <ApiVillageCard key={village.id} village={village} returnTo={`${pathname}${search}`} /> : <VillageCard key={village.id} village={village} />)}</div>
+          <div className="village-grid">{data.items.map(village => apiMode ? <ApiVillageCard key={village.id} village={village} returnTo={`${pathname}${search}`} catalogues={catalogues} /> : <VillageCard key={village.id} village={village} />)}</div>
         ) : <PageState {...state} title="لم نعثر على قرى مطابقة" message={state.error ? explorerErrorMessage(state.error) : data ? apiMode ? 'جرّب اسمًا آخر أو امسح الفلاتر.' : 'جرّب اسمًا آخر أو اختر محافظة مختلفة.' : undefined} />}
         {data?.totalPages > 1 && (
           <nav className="pagination" aria-label="صفحات النتائج">

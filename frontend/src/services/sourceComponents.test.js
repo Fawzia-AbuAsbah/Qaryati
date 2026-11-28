@@ -76,13 +76,13 @@ test('actual API Details mounts the real panel with the loaded village identity 
   assert.match(html, /data-village-id="42"/)
   assert.match(html, /aria-label="مصادر القرية"/)
   assert.equal(html.includes('ربط مصدر موجود'), false) // No form before authenticated lists are loaded.
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
 })
 
 test('actual Details wiring respects the closed integration even with a numeric village and ADMIN', () => {
   explorer.setResult({ data: { ...village, namesById: new Map(), items: [] }, loading: false, retry() {} })
   assert.equal(render(components.Details).includes('data-village-id='), false)
-  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: false, richSections: false })
+  assert.deepEqual(publicVillageCapabilities, { browsing: true, identity: true, geographicCatalogues: true, richSections: false })
 })
 
 test('actual public Details renders only verified basic fields with honest unsupported-section and name states', () => {
@@ -167,16 +167,16 @@ for (const auth of [session([], { status: 'anonymous', user: null }), session(['
   })
 }
 
-test('actual public Explorer has no fabricated catalogue, no editorial status and only public sorts', () => {
+test('actual public Explorer exposes confirmed geographic filters, preserves unknown selected IDs and only public sorts', () => {
   details.available = true
   explorer.setResult({ data: { items: [village], governorates: [], total: 1, page: 1, totalPages: 1 }, loading: false, retry() {} })
   const html = render(components.Explorer, {}, session([], { status: 'anonymous', user: null }), '/villages?governorateId=2&localAuthorityId=7&sortBy=updatedAt')
   assert.match(html, /href="\/villages\/42"/)
-  assert.match(html, /قائمة التصفية غير متاحة/)
-  assert.match(html, /تصفية بمعرّف المحافظة/)
-  assert.match(html, /تصفية بمعرّف الهيئة المحلية/)
+  assert.match(html, /id="governorate"/)
+  assert.match(html, /id="local-authority"/)
+  assert.match(html, /معرّف المحافظة 2/)
+  assert.match(html, /معرّف الهيئة المحلية 7/)
   assert.match(html, /استُبدل ترتيب زمني قديم/)
-  assert.equal(html.includes('id="governorate"'), false)
   assert.equal(html.includes('value="updatedAt"'), false)
   assert.equal(html.includes('value="createdAt"'), false)
   assert.equal(html.includes('DRAFT'), false)

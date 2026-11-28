@@ -14,6 +14,7 @@ import { conflictPermissions } from '../services/conflictAccess.js'
 import VerificationPanel from './VerificationPanel.jsx'
 import VillageConflictsPanel from './VillageConflictsPanel.jsx'
 import VillageSourcesPanel from './sources/VillageSourcesPanel.jsx'
+import { catalogueName, usePublicGeographicCatalogues } from '../services/usePublicGeographicCatalogues.js'
 
 function Field({ label, value }) {
   return <p><strong>{label}: </strong><bdi>{value ?? 'غير متاح'}</bdi></p>
@@ -32,13 +33,15 @@ function ProtectedVillagePanels({ village }) {
   </section>
 }
 
-function ApiVillageContent({ village, returnTo, returnLabel }) {
+function ApiVillageContent({ village, returnTo, returnLabel, catalogues }) {
   const mapHref = villageMapHref(village, villageDetailsService, villageMapService)
+  const governorate = catalogueName(catalogues.governorates, village.governorateId)
+  const localAuthority = catalogueName(catalogues.localAuthorities, village.localAuthorityId)
   return <>
     <div className="page-banner"><div className="shell">
       <nav aria-label="مسار الصفحة"><Link to={returnTo}>{returnLabel}</Link> / <span aria-current="page">{village.name}</span></nav>
       <h1>{village.name}</h1>
-      <p className="location"><MapPin size={18} aria-hidden="true" />اسم المحافظة غير متاح</p>
+      <p className="location"><MapPin size={18} aria-hidden="true" />{governorate ?? 'اسم المحافظة غير متاح'}</p>
     </div></div>
     <div className="shell section details">
       <section className="detail-panel">
@@ -50,7 +53,12 @@ function ApiVillageContent({ village, returnTo, returnLabel }) {
         <Field label="المساحة (كم²)" value={village.areaKm2} />
         <Field label="معرّف المحافظة" value={village.governorateId} />
         <Field label="معرّف الهيئة المحلية" value={village.localAuthorityId} />
-        <p>أسماء المحافظات والهيئات المحلية غير متاحة من الخدمة العامة حاليًا.</p>
+        <Field label="المحافظة" value={governorate} />
+        <Field label="الهيئة المحلية" value={localAuthority} />
+        {catalogues.governorates.status === 'loading' && <p role="status">جارٍ تحميل اسم المحافظة…</p>}
+        {catalogues.governorates.status === 'error' && <p role="alert">تعذّر تحميل اسم المحافظة.</p>}
+        {village.governorateId && catalogues.localAuthorities.status === 'loading' && <p role="status">جارٍ تحميل اسم الهيئة المحلية…</p>}
+        {village.governorateId && catalogues.localAuthorities.status === 'error' && <p role="alert">تعذّر تحميل اسم الهيئة المحلية.</p>}
         <Field label="خط العرض" value={village.latitude} /><Field label="خط الطول" value={village.longitude} />
         {mapHref ? <Link className="button primary" to={mapHref}><MapPin size={18} aria-hidden="true" />عرض الموقع على الخريطة</Link>
           : <p>موقع القرية على الخريطة غير متاح حاليًا.</p>}
@@ -69,6 +77,7 @@ export default function ApiVillageDetails() {
   const { href: returnTo, label: returnLabel } = detailsReturnNavigation(location.state)
   const load = useCallback(signal => villageDetailsService.getVillage(id, { signal }), [id])
   const { data: village, ...state } = useExplorerData(load)
+  const catalogues = usePublicGeographicCatalogues({ service: villageDetailsService, governorateId: village?.governorateId ?? null })
   const title = detailsPageTitle({ ...state, village })
   useLayoutEffect(() => { document.title = title }, [title])
   if (!village) return <div className="shell section">
@@ -76,5 +85,5 @@ export default function ApiVillageDetails() {
       <Link className="button primary" to={returnTo}>العودة إلى {returnLabel}</Link>
     </PageState>
   </div>
-  return <ApiVillageContent key={village.id} village={village} returnTo={returnTo} returnLabel={returnLabel} />
+  return <ApiVillageContent key={village.id} village={village} returnTo={returnTo} returnLabel={returnLabel} catalogues={catalogues} />
 }

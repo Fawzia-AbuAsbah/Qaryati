@@ -14,6 +14,18 @@ public interface AuditWriter {
     /** REQUIRED; CREATE requires after only, UPDATE both, DELETE before only. */
     void recordHistoricalEvent(Long eventId, AuditAction action,
             HistoricalEventAuditSnapshot before, HistoricalEventAuditSnapshot after);
+    /** REQUIRED; CREATE after only, UPDATE both, DELETE before only. */
+    void recordAgriculturalProduct(Long productId, AuditAction action,
+            AgriculturalProductAuditSnapshot before, AgriculturalProductAuditSnapshot after);
+    /** REQUIRED; CREATE after only, UPDATE both, DELETE before only. */
+    void recordVillageAgriculture(Long relationId, AuditAction action,
+            VillageAgricultureAuditSnapshot before, VillageAgricultureAuditSnapshot after);
+    /** REQUIRED; CREATE after only, UPDATE both, DELETE before only. */
+    void recordEconomicActivity(Long activityId, AuditAction action,
+            EconomicActivityAuditSnapshot before, EconomicActivityAuditSnapshot after);
+    /** REQUIRED; CREATE after only, UPDATE both, DELETE before only. */
+    void recordCommunityFacility(Long facilityId, AuditAction action,
+            CommunityFacilityAuditSnapshot before, CommunityFacilityAuditSnapshot after);
     /**
      * Joins the caller's transaction (REQUIRED). The owning service must place its
      * mutation and this call in one transaction and propagate failures for atomic rollback.

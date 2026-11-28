@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.transaction.support.*;
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -129,6 +130,74 @@ class AuditWriterServiceTest {
         assertEquals(void.class, method.getReturnType());
         assertEquals(List.of("CREATE", "UPDATE", "DELETE"),
                 Arrays.stream(AuditAction.values()).map(Enum::name).toList());
+    }
+
+    @Test
+    void mapsEachNewAllowlistedDomainSnapshotWithoutDescriptionsOrArbitraryPayloads() {
+        try (var context = new AnnotationConfigApplicationContext(Config.class)) {
+            authenticate(context);
+            var writer = context.getBean(AuditWriter.class);
+            writer.recordAgriculturalProduct(11L, AuditAction.CREATE, null,
+                    new AgriculturalProductAuditSnapshot("Olives", null, "CROP"));
+            writer.recordVillageAgriculture(12L, AuditAction.CREATE, null,
+                    new VillageAgricultureAuditSnapshot(1L, 2L, "HIGH"));
+            writer.recordEconomicActivity(13L, AuditAction.CREATE, null,
+                    new EconomicActivityAuditSnapshot(1L, "Olive farming", "AGRICULTURE"));
+            writer.recordCommunityFacility(14L, AuditAction.CREATE, null,
+                    new CommunityFacilityAuditSnapshot(1L, "Village school", "SCHOOL",
+                            new BigDecimal("31.500000"), new BigDecimal("35.200000")));
+
+            var logs = ArgumentCaptor.forClass(AuditLog.class);
+            verify(context.getBean(AuditLogRepository.class), times(4)).save(logs.capture());
+            assertEquals(List.of("AGRICULTURAL_PRODUCT", "VILLAGE_AGRICULTURE", "ECONOMIC_ACTIVITY", "COMMUNITY_FACILITY"),
+                    logs.getAllValues().stream().map(AuditLog::getEntityType).toList());
+            assertEquals(List.of(11L, 12L, 13L, 14L),
+                    logs.getAllValues().stream().map(AuditLog::getEntityId).toList());
+            assertEquals(List.of("CREATE", "CREATE", "CREATE", "CREATE"),
+                    logs.getAllValues().stream().map(AuditLog::getAction).toList());
+            assertTrue(logs.getAllValues().stream().allMatch(log -> log.getBeforeData() == null));
+            assertEquals(Map.of("nameAr", "Olives", "productType", "CROP"), logs.getAllValues().get(0).getAfterData());
+            assertEquals(Map.of("villageId", 1L, "productId", 2L, "importance", "HIGH"), logs.getAllValues().get(1).getAfterData());
+            assertEquals(Map.of("villageId", 1L, "name", "Olive farming", "activityType", "AGRICULTURE"), logs.getAllValues().get(2).getAfterData());
+            assertEquals(Map.of("villageId", 1L, "name", "Village school", "facilityType", "SCHOOL",
+                    "latitude", new BigDecimal("31.500000"), "longitude", new BigDecimal("35.200000")),
+                    logs.getAllValues().get(3).getAfterData());
+        }
+    }
+
+    @Test
+    void rejectsInvalidTypedSnapshotsAndInvalidTypedAuditState() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new AgriculturalProductAuditSnapshot("Olives", null, "INVALID"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new VillageAgricultureAuditSnapshot(0L, 2L, "HIGH"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new EconomicActivityAuditSnapshot(1L, "Activity", "INVALID"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new CommunityFacilityAuditSnapshot(1L, "Facility", "SCHOOL", BigDecimal.ONE, null));
+        try (var context = new AnnotationConfigApplicationContext(Config.class)) {
+            var writer = context.getBean(AuditWriter.class);
+            var snapshot = new AgriculturalProductAuditSnapshot("Olives", null, "CROP");
+            assertThrows(IllegalArgumentException.class,
+                    () -> writer.recordAgriculturalProduct(11L, AuditAction.CREATE, snapshot, snapshot));
+            assertThrows(IllegalArgumentException.class,
+                    () -> writer.recordAgriculturalProduct(11L, AuditAction.UPDATE, null, snapshot));
+            assertThrows(IllegalArgumentException.class,
+                    () -> writer.recordAgriculturalProduct(11L, AuditAction.DELETE, snapshot, snapshot));
+            verifyNoInteractions(context.getBean(AuditLogRepository.class));
+        }
+    }
+
+    @Test
+    void typedSnapshotContractsExposeOnlyTheReviewedAllowlistedFields() {
+        assertEquals(List.of("nameAr", "nameEn", "productType"),
+                Arrays.stream(AgriculturalProductAuditSnapshot.class.getRecordComponents()).map(c -> c.getName()).toList());
+        assertEquals(List.of("villageId", "productId", "importance"),
+                Arrays.stream(VillageAgricultureAuditSnapshot.class.getRecordComponents()).map(c -> c.getName()).toList());
+        assertEquals(List.of("villageId", "name", "activityType"),
+                Arrays.stream(EconomicActivityAuditSnapshot.class.getRecordComponents()).map(c -> c.getName()).toList());
+        assertEquals(List.of("villageId", "name", "facilityType", "latitude", "longitude"),
+                Arrays.stream(CommunityFacilityAuditSnapshot.class.getRecordComponents()).map(c -> c.getName()).toList());
     }
 
     private void assertSnapshotMapping(AuditAction action, AuditSnapshot before, AuditSnapshot after,
